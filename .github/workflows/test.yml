@@ -1,0 +1,174 @@
+# Qiming Simulator — CI Pipeline (Windows-first)
+name: Test
+
+on:
+  push:
+    branches: [main, vhdl]
+  pull_request:
+    branches: [main, vhdl]
+
+env:
+  BUILD_TYPE: Release
+
+jobs:
+  # ── C library: native Windows + cross-platform ──
+  test-c:
+    name: C library (${{ matrix.os }})
+    strategy:
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+      fail-fast: false
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure CMake
+        working-directory: libqsim
+        run: cmake -B build -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DBUILD_TESTING=ON
+
+      - name: Build
+        working-directory: libqsim
+        run: cmake --build build --config ${{ env.BUILD_TYPE }} --parallel
+
+      - name: Run tests
+        working-directory: libqsim
+        run: ctest --test-dir build -C ${{ env.BUILD_TYPE }} --output-on-failure
+
+  # ── Rust backend: Windows-native cargo build + test ──
+  test-rust:
+    name: Rust backend (Windows)
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Build Rust crate
+        working-directory: src-tauri
+        run: cargo build --verbose
+
+      - name: Run Rust tests
+        working-directory: src-tauri
+        run: cargo test --verbose
+
+  # ── Rust backend (cross-check on Linux CI runner) ──
+  test-rust-linux:
+    name: Rust backend (Linux CI)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system deps (Tauri)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libssl-dev
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Build
+        working-directory: src-tauri
+        run: cargo build --verbose
+
+      - name: Test
+        working-directory: src-tauri
+        run: cargo test --verbose
+
+  # ── TLA+ model checking (scheduler formal verification) ──
+  test-tla:
+    name: TLA+ model check
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Run TLC model checker
+        working-directory: tla
+        run: |
+          curl -sL -o tla2tools.jar \
+            "https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar"
+          java -cp tla2tools.jar tlc2.TLC -modelcheck -config MC.cfg scheduler.tla
+
+  # ── Release packaging ──
+  package:
+    name: Package (${{ matrix.os }})
+    if: startsWith(github.ref, 'refs/tags/v')
+    strategy:
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+      fail-fast: false
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure CMake
+        working-directory: libqsim
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
+
+      - name: Build
+        working-directory: libqsim
+        run: cmake --build build --config Release --parallel
+
+      - name: Run tests
+        working-directory: libqsim
+        run: ctest --test-dir build -C Release --output-on-failure
+
+      - name: Prepare package
+        shell: bash
+        run: |
+          mkdir -p release/qiming-${{ runner.os }}
+          # Headers
+          cp -r libqsim/include/libqsim release/qiming-${{ runner.os }}/include/
+          # Library
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            cp libqsim/build/Release/qsim.lib release/qiming-${{ runner.os }}/lib/
+          else
+            cp libqsim/build/libqsim.a release/qiming-${{ runner.os }}/lib/
+          fi
+          # Test binary
+          mkdir -p release/qiming-${{ runner.os }}/bin
+          cp libqsim/build/qsim_test* release/qiming-${{ runner.os }}/bin/ 2>/dev/null || true
+          cp libqsim/build/Release/qsim_test* release/qiming-${{ runner.os }}/bin/ 2>/dev/null || true
+          # README
+          cat > release/qiming-${{ runner.os }}/README.txt << 'EOF'
+          Qiming Simulator ${{ runner.os }} Release
+          =====================================
+          include/ — C API headers
+          lib/     — Static library (link against this)
+          bin/     — Test suite executable
+          EOF
+
+      - name: Create archive
+        shell: bash
+        run: |
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            cd release && 7z a qiming-${{ runner.os }}.zip qiming-${{ runner.os }}/
+          else
+            cd release && tar czf qiming-${{ runner.os }}.tar.gz qiming-${{ runner.os }}/
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: qiming-${{ runner.os }}
+          path: release/qiming-${{ runner.os }}.*

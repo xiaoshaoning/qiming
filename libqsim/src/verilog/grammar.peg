@@ -1,0 +1,967 @@
+# Verilog IEEE 1364-2005 PEG grammar for the peg parser generator
+# Embedded C actions build UIR nodes via the libqsim API.
+# Context variables (_parse_unit, _parse_filename, etc.) defined in wrapper.
+# Restrictions: actions must not contain '}' characters (peg limitation).
+
+# Grammar rules
+
+# Parse zero or more modules, primitives, interfaces, and/or packages from a single source file.
+design_file <- spacing ( primitive_decl { save_unit(); } / module { save_unit(); } / interface_decl { save_unit(); } / package_decl { save_unit(); } )+
+    { _parse_ok = 1; _parse_all_consumed = (yypos >= yy->__limit) ? 1 : 0; }
+
+module <- KW_MODULE ID
+    { _parse_unit = uir_create_design_unit(yytext, "verilog", parse_loc()); }
+    ( HASH LPAREN mod_param_decl RPAREN )?
+    (LPAREN port_list RPAREN)? SEMI module_body KW_ENDMODULE
+    { create_ports_from_named(); }
+
+mod_param_decl <- ( KW_PARAMETER )? param_item ( COMMA ( KW_PARAMETER )? param_item )*
+
+interface_decl <- KW_INTERFACE ID
+    { _parse_unit = uir_create_design_unit(yytext, "verilog", parse_loc());
+      _parse_unit->is_interface = 1; }
+    (LPAREN port_list RPAREN)? SEMI
+    interface_body
+    KW_ENDINTERFACE
+    { create_ports_from_named(); }
+
+interface_body <- ( attr_list? ( net_decl / reg_decl / logic_decl / integer_decl
+                   / modport_decl ) )*
+
+modport_decl <- KW_MODPORT ID
+    { if (_parse_unit) add_modport(yytext); }
+    LPAREN modport_port ( COMMA modport_port )* RPAREN SEMI
+
+modport_port <- ( KW_INPUT { _parse_modport_dir = UIR_PORT_IN; }
+                / KW_OUTPUT { _parse_modport_dir = UIR_PORT_OUT; }
+                / KW_INOUT { _parse_modport_dir = UIR_PORT_INOUT; } )
+    ID { add_modport_port(yytext); }
+
+package_decl <- KW_PACKAGE ID
+    { _parse_unit = uir_create_design_unit(yytext, "verilog", parse_loc()); }
+    SEMI package_body KW_ENDPACKAGE
+
+package_body <- ( param_decl )*
+
+import_stmt <- KW_IMPORT ID { _parse_saved = parse_strdup(yytext); }
+    DBL_COLON ID SEMI
+    { if (_parse_unit) do_import(_parse_saved, yytext, 0);
+      free(_parse_saved); _parse_saved = NULL; }
+  / KW_IMPORT ID { _parse_saved = parse_strdup(yytext); }
+    DBL_COLON STAR SEMI
+    { if (_parse_unit) do_import(_parse_saved, NULL, 1);
+      free(_parse_saved); _parse_saved = NULL; }
+
+port_list <- (port_item ( COMMA port_item )*)?
+
+port_item <- KW_INPUT
+    { _parse_port_sig_type = UIR_SIG_WIRE; _parse_decl_signed = 0; }
+    (KW_REG { _parse_port_sig_type = UIR_SIG_REG; } / KW_WIRE / KW_LOGIC { _parse_port_sig_type = UIR_SIG_LOGIC; })? (KW_SIGNED { _parse_decl_signed = 1; })? range_opt ID
+    { _parse_add_port_signed(yytext, UIR_PORT_IN, _parse_range_msb, _parse_range_lsb, _parse_port_sig_type); _parse_range_msb = 0; _parse_range_lsb = 0; }
+  / KW_OUTPUT
+    { _parse_port_sig_type = UIR_SIG_WIRE; _parse_decl_signed = 0; }
+    (KW_REG { _parse_port_sig_type = UIR_SIG_REG; } / KW_WIRE / KW_LOGIC { _parse_port_sig_type = UIR_SIG_LOGIC; })? (KW_SIGNED { _parse_decl_signed = 1; })? range_opt ID
+    { _parse_add_port_signed(yytext, UIR_PORT_OUT, _parse_range_msb, _parse_range_lsb, _parse_port_sig_type); _parse_range_msb = 0; _parse_range_lsb = 0; }
+  / KW_INOUT
+    { _parse_port_sig_type = UIR_SIG_WIRE; _parse_decl_signed = 0; }
+    (KW_REG { _parse_port_sig_type = UIR_SIG_REG; } / KW_WIRE / KW_LOGIC { _parse_port_sig_type = UIR_SIG_LOGIC; })? (KW_SIGNED { _parse_decl_signed = 1; })? range_opt ID
+    { _parse_add_port_signed(yytext, UIR_PORT_INOUT, _parse_range_msb, _parse_range_lsb, _parse_port_sig_type); _parse_range_msb = 0; _parse_range_lsb = 0; }
+  / ID { add_bare_port_name(yytext); _parse_range_msb = 0; _parse_range_lsb = 0; }
+
+module_body <- ( attr_list? ( net_decl / reg_decl / logic_decl / integer_decl / input_decl
+               / output_decl / inout_decl / assign_stmt
+               / always_stmt / always_comb_stmt / always_ff_stmt / always_latch_stmt / initial_stmt
+               / specify_stmt
+               / module_inst / param_decl
+               / genvar_decl / event_decl / generate_stmt / defparam_stmt
+               / function_decl / task_decl / import_stmt ) )*
+
+primitive_decl <- KW_PRIMITIVE ID
+    { _parse_unit = uir_create_design_unit(yytext, "verilog", parse_loc());
+      primitive_enter(); }
+    LPAREN ID { add_bare_port_name(yytext); }
+    ( COMMA ID { add_bare_port_name(yytext); } )* RPAREN SEMI
+    prim_body
+    KW_ENDPRIMITIVE { primitive_leave(); }
+
+prim_body <- ( udp_output_decl / udp_input_decl / udp_reg_decl / initial_stmt / table_decl )*
+
+udp_output_decl <- KW_OUTPUT
+    ( KW_REG { _parse_udp_output_is_reg = 1; } )?
+    ID SEMI
+    { udp_output_decl(yytext); _parse_udp_output_is_reg = 0; }
+
+udp_input_decl <- KW_INPUT ID { udp_input_decl(yytext); }
+    ( COMMA ID { udp_input_decl(yytext); } )* SEMI
+
+udp_reg_decl <- KW_REG ID SEMI
+    { udp_reg_decl(yytext); }
+
+table_decl <- KW_TABLE { udp_table_enter(); }
+    table_entry*
+    KW_ENDTABLE { udp_table_leave(); }
+
+table_entry <- < ( !SEMI !(KW_ENDTABLE) . )* > SEMI { udp_parse_row(yytext); }
+
+genvar_decl <- KW_GENVAR ID { add_genvar_name(yytext); }
+    ( COMMA ID { add_genvar_name(yytext); } )* SEMI
+
+event_decl <- KW_EVENT ID { decl_event(yytext); }
+    ( COMMA ID { decl_event(yytext); } )* SEMI
+
+generate_stmt <- KW_GENERATE KW_FOR LPAREN
+    ( (KW_GENVAR)? ID { save_genvar_id(yytext); }
+    ASSIGN expr SEMI expr SEMI ID ASSIGN expr ) RPAREN
+    { generate_for_enter(); }
+    gen_block
+    { generate_for_leave(); }
+    KW_ENDGENERATE
+  / KW_GENERATE KW_IF LPAREN expr RPAREN
+      { generate_if_enter(); }
+    gen_block
+      { generate_if_leave(); }
+    ( KW_ELSE
+        { generate_else_enter(); }
+      gen_block
+        { generate_if_leave(); }
+    )?
+    KW_ENDGENERATE
+  / KW_GENERATE KW_CASE LPAREN expr RPAREN
+      { generate_case_enter(); }
+    gen_case_item_list
+    KW_ENDCASE
+      { generate_case_leave(); }
+    KW_ENDGENERATE
+  / KW_GENERATE generate_body KW_ENDGENERATE
+generate_body <- ( gen_block / net_decl / reg_decl / assign_stmt / always_stmt / always_comb_stmt / always_ff_stmt / always_latch_stmt / initial_stmt / module_inst / generate_stmt )*
+gen_block <- KW_BEGIN COLON ID { _parse_gen_label = parse_strdup(yytext); } generate_body KW_END
+          / KW_BEGIN generate_body KW_END
+gen_case_item_list <- ( gen_case_item )*
+gen_case_item <- KW_DEFAULT (COLON)?
+                   { generate_case_default_enter(); }
+                 gen_block
+                   { generate_case_item_leave(); }
+               / expr ( COMMA expr )* COLON
+                   { generate_case_item_enter(); }
+                 gen_block
+                   { generate_case_item_leave(); }
+
+input_decl <- KW_INPUT { _parse_decl_signed = 0; } (KW_SIGNED { _parse_decl_signed = 1; })? range_opt ID { _parse_saved = parse_strdup(yytext); _parse_array_size = 0; _parse_array_dims_count = 0; } array_dims_opt
+    { decl_input(_parse_saved, parse_range_width(), _parse_array_size); free(_parse_saved); _parse_saved = NULL; }
+    ( COMMA ID { _parse_saved = parse_strdup(yytext); _parse_array_size = 0; _parse_array_dims_count = 0; } array_dims_opt
+        { decl_input(_parse_saved, _parse_saved_range_width, _parse_array_size); free(_parse_saved); _parse_saved = NULL; } )* SEMI
+
+output_decl <- KW_OUTPUT { _parse_decl_signed = 0; _parse_port_sig_type = UIR_SIG_WIRE; } (KW_REG { _parse_port_sig_type = UIR_SIG_REG; } / KW_WIRE)? (KW_SIGNED { _parse_decl_signed = 1; })? range_opt ID { _parse_saved = parse_strdup(yytext); _parse_array_size = 0; _parse_array_dims_count = 0; } array_dims_opt
+    { decl_output(_parse_saved, parse_range_width(), _parse_array_size); free(_parse_saved); _parse_saved = NULL; }
+    ( COMMA ID { _parse_saved = parse_strdup(yytext); _parse_array_size = 0; _parse_array_dims_count = 0; } array_dims_opt
+        { decl_output(_parse_saved, _parse_saved_range_width, _parse_array_size); free(_parse_saved); _parse_saved = NULL; } )* SEMI
+
+inout_decl <- KW_INOUT { _parse_decl_signed = 0; } (KW_SIGNED { _parse_decl_signed = 1; })? range_opt ID { _parse_saved = parse_strdup(yytext); _parse_array_size = 0; _parse_array_dims_count = 0; } array_dims_opt
+    { decl_inout(_parse_saved, parse_range_width(), _parse_array_size); free(_parse_saved); _parse_saved = NULL; }
+    ( COMMA ID { _parse_saved = parse_strdup(yytext); _parse_array_size = 0; _parse_array_dims_count = 0; } array_dims_opt
+        { decl_inout(_parse_saved, _parse_saved_range_width, _parse_array_size); free(_parse_saved); _parse_saved = NULL; } )* SEMI
+
+net_type <- KW_WIRE   { _parse_net_type = UIR_SIG_WIRE; }
+          / KW_TRI    { _parse_net_type = UIR_SIG_TRI; }
+          / KW_WAND   { _parse_net_type = UIR_SIG_WAND; }
+          / KW_WOR    { _parse_net_type = UIR_SIG_WOR; }
+          / KW_TRI0   { _parse_net_type = UIR_SIG_TRI0; }
+          / KW_TRI1   { _parse_net_type = UIR_SIG_TRI1; }
+          / KW_TRIAND { _parse_net_type = UIR_SIG_TRIAND; }
+          / KW_TRIOR  { _parse_net_type = UIR_SIG_TRIOR; }
+          / KW_TRIREG { _parse_net_type = UIR_SIG_TRIREG; }
+          / KW_SUPPLY0{ _parse_net_type = UIR_SIG_SUPPLY0; }
+          / KW_SUPPLY1{ _parse_net_type = UIR_SIG_SUPPLY1; }
+          / KW_UWIRE  { _parse_net_type = UIR_SIG_UWIRE; }
+
+net_decl <- net_type { _parse_decl_signed = 0; } (KW_SIGNED { _parse_decl_signed = 1; })? range_opt ID { _parse_saved = parse_strdup(yytext); _parse_array_size = 0; _parse_array_dims_count = 0; } array_dims_opt
+    ( ASSIGN expr { do_decl_init_assign(_parse_saved); } )?
+    { _parse_add_signal_signed(_parse_saved, _parse_net_type, parse_range_width(), _parse_array_size); free(_parse_saved); _parse_saved = NULL; }
+    ( COMMA ID { _parse_saved = parse_strdup(yytext); _parse_array_size = 0; _parse_array_dims_count = 0; } array_dims_opt
+        ( ASSIGN expr { do_decl_init_assign(_parse_saved); } )?
+        { _parse_add_signal_signed(_parse_saved, _parse_net_type, _parse_saved_range_width, _parse_array_size); free(_parse_saved); _parse_saved = NULL; } )*
+    SEMI
+
+reg_decl <- KW_REG { _parse_decl_signed = 0; } (KW_SIGNED { _parse_decl_signed = 1; })? range_opt ID { _parse_saved = parse_strdup(yytext); _parse_array_size = 0; _parse_array_dims_count = 0; } array_dims_opt
+    ( ASSIGN expr { do_decl_init_assign(_parse_saved); } )?
+    { decl_reg(_parse_saved, parse_range_width(), _parse_array_size); free(_parse_saved); _parse_saved = NULL; }
+    ( COMMA ID { _parse_saved = parse_strdup(yytext); _parse_array_size = 0; _parse_array_dims_count = 0; } array_dims_opt
+        ( ASSIGN expr { do_decl_init_assign(_parse_saved); } )?
+        { decl_reg(_parse_saved, _parse_saved_range_width, _parse_array_size); free(_parse_saved); _parse_saved = NULL; } )*
+    SEMI
+
+logic_decl <- KW_LOGIC { _parse_decl_signed = 0; } (KW_SIGNED { _parse_decl_signed = 1; })? range_opt ID { _parse_saved = parse_strdup(yytext); _parse_array_size = 0; _parse_array_dims_count = 0; } array_dims_opt
+    ( ASSIGN expr { do_decl_init_assign(_parse_saved); } )?
+    { decl_logic(_parse_saved, parse_range_width(), _parse_array_size); free(_parse_saved); _parse_saved = NULL; }
+    ( COMMA ID { _parse_saved = parse_strdup(yytext); _parse_array_size = 0; _parse_array_dims_count = 0; } array_dims_opt
+        ( ASSIGN expr { do_decl_init_assign(_parse_saved); } )?
+        { decl_logic(_parse_saved, _parse_saved_range_width, _parse_array_size); free(_parse_saved); _parse_saved = NULL; } )*
+    SEMI
+
+integer_decl <- KW_INTEGER ID
+    { decl_reg(yytext, 32, 0); }
+    ( COMMA ID { decl_reg(yytext, 32, 0); } )*
+    SEMI
+
+param_decl <- ( KW_PARAMETER / KW_LOCALPARAM ) param_item ( COMMA param_item )* SEMI
+param_item <- ID { save_param_name(yytext); } ASSIGN const_expr { save_param_value(); }
+
+defparam_stmt <- KW_DEFPARAM
+    ID { save_defparam_start(yytext); }
+    ( DOT ID { save_defparam_extend(yytext); } )*
+    ASSIGN const_expr { save_defparam_value(); }
+    ( COMMA
+        ID { save_defparam_start(yytext); }
+        ( DOT ID { save_defparam_extend(yytext); } )*
+        ASSIGN const_expr { save_defparam_value(); }
+    )* SEMI
+
+attr_list <- ATTR_OPEN
+    ID { save_attr_name(yytext); }
+    ( ASSIGN ( ID / NUMBER / STRING ) { save_attr_val(yytext); } )?
+    ( COMMA ID { save_attr_name(yytext); }
+      ( ASSIGN ( ID / NUMBER / STRING ) { save_attr_val(yytext); } )?
+    )* ATTR_CLOSE
+    { finish_attr_list(); }
+
+range_opt <- range / { _parse_saved_range_width = 1; _parse_range_msb = 0; _parse_range_lsb = 0; }
+range <- LBRACKET NUMBER { _parse_range_msb = (uint32_t)atoi(yytext); } COLON NUMBER { _parse_range_lsb = (uint32_t)atoi(yytext); } RBRACKET
+    { int _rw = _parse_range_msb >= _parse_range_lsb ? (int)(_parse_range_msb - _parse_range_lsb + 1) : (int)(_parse_range_lsb - _parse_range_msb + 1); _parse_saved_range_width = _rw; }
+
+# Array dimensions: zero or more [msb:lsb] unpacked ranges
+array_dims_opt <- array_range*
+array_range <- LBRACKET NUMBER { _parse_array_msb = (uint32_t)atoi(yytext); }
+               COLON NUMBER { _parse_array_lsb = (uint32_t)atoi(yytext); }
+               RBRACKET
+    { uint32_t _a = _parse_array_msb; uint32_t _b = _parse_array_lsb;
+      uint32_t _dim = (_a >= _b ? _a - _b : _b - _a) + 1;
+      _parse_array_dims[_parse_array_dims_count] = _dim;
+      _parse_array_size = (_parse_array_size == 0) ? _dim : _parse_array_size * _dim;
+      _parse_array_dims_count++;
+      _parse_saved_array_size = (int)_parse_array_size; }
+
+assign_stmt <- KW_ASSIGN delay_control?
+    ( ID { _parse_assign_lhs = parse_strdup(yytext); }
+        ( LBRACKET expr COLON expr RBRACKET
+            { _parse_lhs_lo = expr_pop(); _parse_lhs_hi = expr_pop(); }
+        / LBRACKET expr RBRACKET
+            { _parse_lhs_index = expr_pop(); }
+        )?
+    / LBRACE { _parse_concat_count = 0; }
+        ID { store_concat_name(yytext); }
+        ( COMMA ID { store_concat_name(yytext); } )*
+        RBRACE
+    )
+    ASSIGN expr
+    { if (_parse_unit) do_assign_stmt_finish(_parse_unit); }
+    SEMI
+
+always_stmt <- KW_ALWAYS
+    { start_always_process(_parse_unit); }
+    (sensitivity_stmt)? statement
+    { finish_process(); }
+
+always_comb_stmt <- KW_ALWAYS_COMB
+    { start_always_comb_process(_parse_unit); }
+    statement
+    { finish_process(); }
+
+always_ff_stmt <- KW_ALWAYS_FF
+    { start_always_ff_process(_parse_unit); }
+    sensitivity_stmt statement
+    { finish_process(); }
+
+always_latch_stmt <- KW_ALWAYS_LATCH
+    { start_always_latch_process(_parse_unit); }
+    statement
+    { finish_process(); }
+
+initial_stmt <- KW_INITIAL
+    { start_initial_process(_parse_unit); }
+    statement
+    { finish_process(); }
+
+sensitivity_stmt <- AT LPAREN sens_list RPAREN / AT LPAREN STAR RPAREN
+    { _parse_auto_sens = 1; }
+sens_list <- sens_item ( ( COMMA / KW_OR ) sens_item )*
+sens_item <- ( KW_POSEDGE { _parse_edge_flag = 1; } / KW_NEGEDGE { _parse_edge_flag = -1; } )? ID
+    { record_sensitivity(yytext); }
+
+statement <- delay_control statement { do_delay_finish(); }
+           / event_control statement { do_event_finish(); }
+           / trigger_stmt
+           / wait_stmt / seq_block / if_stmt / case_stmt / casez_stmt / for_stmt / repeat_stmt / while_stmt
+           / forever_stmt / disable_stmt / force_stmt / release_stmt / blocking_assign SEMI / nonblocking_assign SEMI / system_task / task_enable / SEMI
+
+delay_control <- HASH expr { do_save_delay(); }
+
+event_control <- AT LPAREN (KW_POSEDGE { _parse_edge_flag = 1; } / KW_NEGEDGE { _parse_edge_flag = -1; })? ID { do_event_enter(yytext); } RPAREN
+             / AT ID { _parse_edge_flag = 0; do_event_enter(yytext); }
+
+wait_stmt <- KW_WAIT LPAREN expr RPAREN statement { do_wait_finish(); }
+
+disable_stmt <- KW_DISABLE ID SEMI { do_disable_stmt(yytext); }
+
+force_stmt <- KW_FORCE ID { _parse_saved = parse_strdup(yytext); } ASSIGN expr SEMI
+    { if (_parse_unit) do_force_stmt(_parse_unit); free(_parse_saved); _parse_saved = NULL; }
+
+release_stmt <- KW_RELEASE ID { _parse_saved = parse_strdup(yytext); } SEMI
+    { if (_parse_unit) do_release_stmt(_parse_unit); free(_parse_saved); _parse_saved = NULL; }
+
+specify_stmt <- KW_SPECIFY { specify_enter(); }
+    spec_item*
+    KW_ENDSPECIFY { specify_leave(); }
+
+spec_item <- specparam_decl / conditional_path / path_decl / timing_check
+
+specparam_decl <- KW_SPECPARAM
+    ID { save_specparam_name(yytext); } ASSIGN const_expr { save_specparam_value(); }
+    ( COMMA ID { save_specparam_name(yytext); } ASSIGN const_expr { save_specparam_value(); } )*
+    SEMI
+
+conditional_path <- KW_IF LPAREN expr { _path_condition = expr_pop(); } RPAREN path_decl
+
+path_decl <- parallel_path / full_path
+
+data_terminal <- LPAREN ID { _parse_saved2 = parse_strdup(yytext); }
+    ( PLUSCOLON { _path_dst_pol = 1; } / MINUSCOLON { _path_dst_pol = -1; } )
+    ID { _path_data_src = parse_strdup(yytext); } RPAREN
+
+parallel_path <- LPAREN
+    (KW_POSEDGE { _path_src_edge = 1; } / KW_NEGEDGE { _path_src_edge = -1; })?
+    ID { _parse_saved = parse_strdup(yytext); }
+    PATT_SEP
+    ( data_terminal
+    / ID { _parse_saved2 = parse_strdup(yytext); }
+      ( PLUSCOLON { _path_dst_pol = 1; } / MINUSCOLON { _path_dst_pol = -1; } )?
+    )
+    RPAREN ASSIGN
+    ( LPAREN expr { _path_rise = expr_pop(); } COMMA expr { _path_fall = expr_pop(); } RPAREN
+    / expr { _path_rise = expr_pop(); _path_fall = NULL; }
+    )
+    SEMI
+    { if (_parse_specify) do_parallel_path(_parse_specify, _parse_saved, _parse_saved2, _path_data_src, _path_rise, _path_fall, _path_src_edge, _path_dst_pol, _path_condition);
+      free(_parse_saved); free(_parse_saved2); free(_path_data_src);
+      _parse_saved = NULL; _parse_saved2 = NULL; _path_data_src = NULL;
+      _path_rise = NULL; _path_fall = NULL; _path_src_edge = 0; _path_dst_pol = 0; _path_condition = NULL; }
+
+full_path <- LPAREN
+    (KW_POSEDGE { _path_src_edge = 1; } / KW_NEGEDGE { _path_src_edge = -1; })?
+    ID { _parse_saved = parse_strdup(yytext); }
+    FULL_SEP
+    ( data_terminal
+    / ID { _parse_saved2 = parse_strdup(yytext); }
+      ( PLUSCOLON { _path_dst_pol = 1; } / MINUSCOLON { _path_dst_pol = -1; } )?
+    )
+    RPAREN ASSIGN
+    ( LPAREN expr { _path_rise = expr_pop(); } COMMA expr { _path_fall = expr_pop(); } COMMA expr { _path_z = expr_pop(); } COMMA expr { _path_x = expr_pop(); } RPAREN
+    / expr { _path_rise = expr_pop(); _path_fall = NULL; _path_z = NULL; _path_x = NULL; }
+    )
+    SEMI
+    { if (_parse_specify) do_full_path(_parse_specify, _parse_saved, _parse_saved2, _path_data_src, _path_rise, _path_fall, _path_z, _path_x, _path_src_edge, _path_dst_pol, _path_condition);
+      free(_parse_saved); free(_parse_saved2); free(_path_data_src);
+      _parse_saved = NULL; _parse_saved2 = NULL; _path_data_src = NULL;
+      _path_rise = NULL; _path_fall = NULL; _path_z = NULL; _path_x = NULL; _path_src_edge = 0; _path_dst_pol = 0; _path_condition = NULL; }
+
+timing_check <- sys_setup / sys_hold / sys_setuphold / sys_width / sys_period
+
+sys_setup <- SYS_SETUP LPAREN ID { _parse_saved = parse_strdup(yytext); }
+    COMMA ID { _parse_saved2 = parse_strdup(yytext); }
+    COMMA expr { _path_rise = expr_pop(); }
+    ( COMMA ID { /* notifier, skip */ } )? RPAREN SEMI
+    { if (_parse_specify) do_timing_check(_parse_specify, UIR_TIMING_SETUP, _parse_saved, _parse_saved2, _path_rise, NULL);
+      free(_parse_saved); free(_parse_saved2); _parse_saved = NULL; _parse_saved2 = NULL; _path_rise = NULL; }
+
+sys_hold <- SYS_HOLD LPAREN ID { _parse_saved = parse_strdup(yytext); }
+    COMMA ID { _parse_saved2 = parse_strdup(yytext); }
+    COMMA expr { _path_rise = expr_pop(); }
+    ( COMMA ID { /* notifier, skip */ } )? RPAREN SEMI
+    { /* IEEE: $hold(ref_event, data_event, delay). Swap to (data, ref). */
+      if (_parse_specify) do_timing_check(_parse_specify, UIR_TIMING_HOLD, _parse_saved2, _parse_saved, _path_rise, NULL);
+      free(_parse_saved); free(_parse_saved2); _parse_saved = NULL; _parse_saved2 = NULL; _path_rise = NULL; }
+
+sys_setuphold <- SYS_SETUPHOLD LPAREN ID { _parse_saved = parse_strdup(yytext); }
+    COMMA ID { _parse_saved2 = parse_strdup(yytext); }
+    COMMA expr { _path_rise = expr_pop(); }
+    COMMA expr { _path_fall = expr_pop(); }
+    ( COMMA ID { /* notifier, skip */ } )? RPAREN SEMI
+    { /* IEEE: $setuphold(ref_event, data_event, ...). Swap to (data, ref). */
+      if (_parse_specify) do_timing_check(_parse_specify, UIR_TIMING_SETUPHOLD, _parse_saved2, _parse_saved, _path_rise, NULL);
+      free(_parse_saved); free(_parse_saved2); _parse_saved = NULL; _parse_saved2 = NULL; _path_rise = NULL; _path_fall = NULL; }
+
+sys_width <- SYS_WIDTH LPAREN ID { _parse_saved = parse_strdup(yytext); }
+    COMMA expr { _path_rise = expr_pop(); }
+    ( COMMA expr { /* threshold, skip */ } )? RPAREN SEMI
+    { if (_parse_specify) do_timing_check(_parse_specify, UIR_TIMING_WIDTH, NULL, _parse_saved, _path_rise, NULL);
+      free(_parse_saved); _parse_saved = NULL; _path_rise = NULL; }
+
+sys_period <- SYS_PERIOD LPAREN ID { _parse_saved = parse_strdup(yytext); }
+    COMMA expr { _path_rise = expr_pop(); }
+    ( COMMA ID { /* notifier, skip */ } )? RPAREN SEMI
+    { if (_parse_specify) do_timing_check(_parse_specify, UIR_TIMING_PERIOD, NULL, _parse_saved, _path_rise, NULL);
+      free(_parse_saved); _parse_saved = NULL; _path_rise = NULL; }
+
+trigger_stmt <- ARROW ID SEMI { do_trigger_stmt(yytext); }
+
+system_task <- SYS_READMEMH LPAREN STRING { _parse_saved = parse_strdup(yytext); } COMMA ID RPAREN SEMI
+    { if (_parse_unit) append_stmt(uir_make_sys_task(_parse_unit, UIR_SYS_READMEMH, _parse_saved, yytext, NULL, NULL, 0, parse_loc()));
+      free(_parse_saved); _parse_saved = NULL; }
+  / SYS_WRITEMEMH LPAREN STRING { _parse_saved = parse_strdup(yytext); } COMMA ID RPAREN SEMI
+    { if (_parse_unit) append_stmt(uir_make_sys_task(_parse_unit, UIR_SYS_WRITEMEMH, _parse_saved, yytext, NULL, NULL, 0, parse_loc()));
+      free(_parse_saved); _parse_saved = NULL; }
+  / SYS_DISPLAY LPAREN STRING { _parse_saved = parse_strdup(yytext); _parse_func_call_sp = _expr_sp; }
+    (COMMA expr_list)? RPAREN SEMI
+    { if (_parse_unit) do_sys_display(_parse_unit, UIR_SYS_DISPLAY, _parse_saved);
+      free(_parse_saved); _parse_saved = NULL; }
+  / SYS_WRITE LPAREN STRING { _parse_saved = parse_strdup(yytext); _parse_func_call_sp = _expr_sp; }
+    (COMMA expr_list)? RPAREN SEMI
+    { if (_parse_unit) do_sys_display(_parse_unit, UIR_SYS_WRITE, _parse_saved);
+      free(_parse_saved); _parse_saved = NULL; }
+  / SYS_MONITOR LPAREN STRING { _parse_saved = parse_strdup(yytext); _parse_func_call_sp = _expr_sp; }
+    (COMMA expr_list)? RPAREN SEMI
+    { if (_parse_unit) do_sys_display(_parse_unit, UIR_SYS_MONITOR, _parse_saved);
+      free(_parse_saved); _parse_saved = NULL; }
+  / SYS_STOP LPAREN expr RPAREN SEMI
+    { if (_parse_unit) do_sys_stop_finish_with_arg(_parse_unit, UIR_SYS_STOP); }
+  / SYS_STOP SEMI
+    { if (_parse_unit) append_stmt(uir_make_sys_task(_parse_unit, UIR_SYS_STOP, NULL, NULL, NULL, NULL, 0, parse_loc())); }
+  / SYS_FINISH LPAREN expr RPAREN SEMI
+    { if (_parse_unit) do_sys_stop_finish_with_arg(_parse_unit, UIR_SYS_FINISH); }
+  / SYS_FINISH SEMI
+    { if (_parse_unit) append_stmt(uir_make_sys_task(_parse_unit, UIR_SYS_FINISH, NULL, NULL, NULL, NULL, 0, parse_loc())); }
+  / SYS_FATAL LPAREN STRING { _parse_saved = parse_strdup(yytext); _parse_func_call_sp = _expr_sp; }
+    (COMMA expr_list)? RPAREN SEMI
+    { if (_parse_unit) do_sys_display(_parse_unit, UIR_SYS_FATAL, _parse_saved);
+      free(_parse_saved); _parse_saved = NULL; }
+  / SYS_ERROR LPAREN STRING { _parse_saved = parse_strdup(yytext); _parse_func_call_sp = _expr_sp; }
+    (COMMA expr_list)? RPAREN SEMI
+    { if (_parse_unit) do_sys_display(_parse_unit, UIR_SYS_ERROR, _parse_saved);
+      free(_parse_saved); _parse_saved = NULL; }
+  / SYS_WARNING LPAREN STRING { _parse_saved = parse_strdup(yytext); _parse_func_call_sp = _expr_sp; }
+    (COMMA expr_list)? RPAREN SEMI
+    { if (_parse_unit) do_sys_display(_parse_unit, UIR_SYS_WARNING, _parse_saved);
+      free(_parse_saved); _parse_saved = NULL; }
+  / SYS_INFO LPAREN STRING { _parse_saved = parse_strdup(yytext); _parse_func_call_sp = _expr_sp; }
+    (COMMA expr_list)? RPAREN SEMI
+    { if (_parse_unit) do_sys_display(_parse_unit, UIR_SYS_INFO, _parse_saved);
+      free(_parse_saved); _parse_saved = NULL; }
+  / SYS_DUMPFILE LPAREN STRING RPAREN SEMI
+    { if (_parse_unit) append_stmt(uir_make_sys_task(_parse_unit, UIR_SYS_DUMPFILE, NULL, NULL, yytext, NULL, 0, parse_loc())); }
+  / SYS_DUMPVARS (LPAREN RPAREN)? SEMI
+    { if (_parse_unit) append_stmt(uir_make_sys_task(_parse_unit, UIR_SYS_DUMPVARS, NULL, NULL, NULL, NULL, 0, parse_loc())); }
+  / SYS_DUMPON (LPAREN RPAREN)? SEMI
+    { if (_parse_unit) append_stmt(uir_make_sys_task(_parse_unit, UIR_SYS_DUMPON, NULL, NULL, NULL, NULL, 0, parse_loc())); }
+  / SYS_DUMPOFF (LPAREN RPAREN)? SEMI
+    { if (_parse_unit) append_stmt(uir_make_sys_task(_parse_unit, UIR_SYS_DUMPOFF, NULL, NULL, NULL, NULL, 0, parse_loc())); }
+  / SYS_VALUE_PLUSARGS LPAREN STRING { _parse_saved = parse_strdup(yytext); } COMMA ID RPAREN SEMI
+    { if (_parse_unit) append_stmt(uir_make_sys_task(_parse_unit, UIR_SYS_VALUE_PLUSARGS, NULL, yytext, _parse_saved, NULL, 0, parse_loc()));
+      free(_parse_saved); _parse_saved = NULL; }
+  / SYS_TEST_PLUSARGS LPAREN STRING RPAREN SEMI
+    { if (_parse_unit) append_stmt(uir_make_sys_task(_parse_unit, UIR_SYS_TEST_PLUSARGS, NULL, NULL, yytext, NULL, 0, parse_loc())); }
+  / SYS_FWRITE LPAREN { _parse_func_call_sp = _expr_sp; } expr COMMA STRING { _parse_saved = parse_strdup(yytext); }
+    (COMMA expr_list)? RPAREN SEMI
+    { if (_parse_unit) do_sys_display(_parse_unit, UIR_SYS_FWRITE, _parse_saved);
+      free(_parse_saved); _parse_saved = NULL; }
+  / SYS_FDISPLAY LPAREN { _parse_func_call_sp = _expr_sp; } expr COMMA STRING { _parse_saved = parse_strdup(yytext); }
+    (COMMA expr_list)? RPAREN SEMI
+    { if (_parse_unit) do_sys_display(_parse_unit, UIR_SYS_FDISPLAY, _parse_saved);
+      free(_parse_saved); _parse_saved = NULL; }
+  / SYS_FCLOSE LPAREN { _parse_func_call_sp = _expr_sp; } expr RPAREN SEMI
+    { if (_parse_unit) do_sys_display(_parse_unit, UIR_SYS_FCLOSE, NULL); }
+  / SYS_TIMEFORMAT LPAREN { _parse_func_call_sp = _expr_sp; } expr COMMA expr COMMA STRING { _parse_saved = parse_strdup(yytext); }
+    COMMA expr RPAREN SEMI
+    { if (_parse_unit) do_sys_display(_parse_unit, UIR_SYS_TIMEFORMAT, _parse_saved);
+      free(_parse_saved); _parse_saved = NULL; }
+
+/ SYS_PRINTTIMESCALE LPAREN STRING RPAREN SEMI
+    { if (_parse_unit) append_stmt(uir_make_sys_task(_parse_unit, UIR_SYS_PRINTTIMESCALE, NULL, NULL, yytext, NULL, 0, parse_loc())); }
+/ SYS_PRINTTIMESCALE SEMI
+    { if (_parse_unit) append_stmt(uir_make_sys_task(_parse_unit, UIR_SYS_PRINTTIMESCALE, NULL, NULL, NULL, NULL, 0, parse_loc())); }
+
+/ SYS_SDF_ANNOTATE LPAREN STRING { _parse_saved = parse_strdup(yytext); }
+  (COMMA ID)? RPAREN SEMI
+  { if (_parse_unit) append_stmt(uir_make_sys_task(_parse_unit, UIR_SDF_ANNOTATE, _parse_saved, NULL, NULL, NULL, 0, parse_loc()));
+    free(_parse_saved); _parse_saved = NULL; }
+
+seq_block <- KW_BEGIN COLON ID { begin_named_block(yytext);
+                                  _parse_block_name = parse_strdup(yytext); } statement* KW_END { end_named_block(); }
+          / KW_BEGIN statement* KW_END
+
+if_stmt <- KW_IF LPAREN expr RPAREN
+    { if_then_start(); }
+    statement
+    ( KW_ELSE
+        { if_else_start(); }
+        statement )?
+    { if_finish(); }
+
+case_stmt <- KW_CASE LPAREN expr RPAREN
+    { do_case_enter(_parse_unit); }
+    case_item_list KW_ENDCASE
+    { do_case_finish(_parse_unit, 0); }
+
+casez_stmt <- KW_CASEZ LPAREN expr RPAREN
+    { do_case_enter(_parse_unit); }
+    case_item_list KW_ENDCASE
+    { do_case_finish(_parse_unit, 1); }
+
+case_item_list <- ( case_item )*
+
+case_item <- default_item
+          / pattern_item
+
+pattern_item <- expr ( COMMA expr )* COLON
+    { do_case_item_enter(_parse_unit); }
+    statement
+    { do_case_item_finish(_parse_unit); }
+
+default_item <- KW_DEFAULT COLON
+    { do_case_default_enter(_parse_unit); }
+    statement
+    { do_case_default_finish(_parse_unit); }
+
+for_stmt <- KW_FOR LPAREN
+    blocking_assign { do_for_init_save(); } SEMI
+    expr { do_for_cond_save(); } SEMI
+    blocking_assign { do_for_step_save(); } RPAREN
+    { do_for_body_enter(); }
+    statement
+    { do_for_finish(); }
+
+repeat_stmt <- KW_REPEAT LPAREN expr { do_repeat_enter(); } RPAREN
+    { do_repeat_body_enter(); }
+    statement
+    { do_repeat_finish(); }
+
+while_stmt <- KW_WHILE LPAREN expr { do_while_enter(); } RPAREN
+    { do_while_body_enter(); }
+    statement
+    { do_while_finish(); }
+
+forever_stmt <- KW_FOREVER
+    { do_forever_enter(); }
+    statement
+    { do_forever_finish(); }
+
+function_decl <- KW_FUNCTION ( KW_AUTOMATIC { _parse_decl_automatic = 1; } )? range_opt ID
+    { if (_parse_unit) _parse_saved = parse_strdup(yytext); }
+    func_port_opt
+    func_item_decl* statement KW_ENDFUNCTION
+    { finish_function(); }
+
+func_port_opt <- LPAREN
+      { do_func_port_enter(); }
+      port_list RPAREN
+      { do_func_port_leave(); }
+    SEMI
+    { func_port_cleanup(); }
+  / SEMI
+    { do_func_port_simple(); }
+
+task_decl <- KW_TASK ( KW_AUTOMATIC { _parse_decl_automatic = 1; } )? ID
+    { if (_parse_unit) _parse_saved = parse_strdup(yytext); }
+    SEMI
+    { if (_parse_unit) start_task(_parse_unit, _parse_saved); _parse_decl_automatic = 0; free(_parse_saved); _parse_saved = NULL; }
+    task_item_decl* seq_block KW_ENDTASK
+    { finish_task(); }
+
+func_item_decl <- input_decl / reg_decl / integer_decl
+task_item_decl <- input_decl / output_decl / inout_decl / reg_decl / integer_decl
+
+blocking_assign <-
+    ( ID { _parse_assign_lhs = parse_strdup(yytext); _parse_multi_index_count = 0; }
+        ( LBRACKET expr RBRACKET
+            { _parse_multi_indices[_parse_multi_index_count++] = expr_pop(); }
+            ( LBRACKET expr RBRACKET
+              { _parse_multi_indices[_parse_multi_index_count++] = expr_pop(); } )+
+        / LBRACKET expr COLON expr RBRACKET
+            { _parse_lhs_lo = expr_pop(); _parse_lhs_hi = expr_pop(); }
+        / LBRACKET expr RBRACKET
+            { _parse_lhs_index = expr_pop(); }
+        )?
+    / LBRACE { _parse_concat_count = 0; }
+        ID { store_concat_name(yytext); }
+        ( COMMA ID { store_concat_name(yytext); } )*
+        RBRACE
+    )
+    ASSIGN expr
+    { if (_parse_unit) do_blocking_assign_finish(_parse_unit); }
+
+nonblocking_assign <-
+    ( ID { _parse_assign_lhs = parse_strdup(yytext); _parse_multi_index_count = 0; }
+        ( LBRACKET expr RBRACKET
+            { _parse_multi_indices[_parse_multi_index_count++] = expr_pop(); }
+            ( LBRACKET expr RBRACKET
+              { _parse_multi_indices[_parse_multi_index_count++] = expr_pop(); } )+
+        / LBRACKET expr COLON expr RBRACKET
+            { _parse_lhs_lo = expr_pop(); _parse_lhs_hi = expr_pop(); }
+        / LBRACKET expr RBRACKET
+            { _parse_lhs_index = expr_pop(); }
+        )?
+    / LBRACE { _parse_concat_count = 0; }
+        ID { store_concat_name(yytext); }
+        ( COMMA ID { store_concat_name(yytext); } )*
+        RBRACE
+    )
+    LE expr
+    { if (_parse_unit) do_nonblocking_assign_finish(_parse_unit); }
+
+task_enable <- ID { _parse_func_call_sp = _expr_sp; _parse_func_call_name = parse_strdup(yytext); } LPAREN expr_list RPAREN SEMI
+    { if (_parse_unit) do_task_enable_stmt(_parse_unit, _parse_func_call_name); free(_parse_func_call_name); _parse_func_call_name = NULL; }
+
+module_inst <- ID { _parse_saved = parse_strdup(yytext); } ID
+    { if (_parse_unit) uir_add_instance(_parse_unit, yytext, _parse_saved); free(_parse_saved); _parse_saved = NULL; }
+    LPAREN conn_list RPAREN SEMI
+
+conn_list <- ( conn_item ( COMMA conn_item )* )?
+conn_item <- DOT ID
+    { _parse_saved = parse_strdup(yytext); }
+    LPAREN RPAREN
+    { if (_parse_unit && _parse_unit->instance_count > 0)
+        uir_add_connection(
+            _parse_unit->instances[_parse_unit->instance_count - 1],
+            _parse_saved, NULL);
+      free(_parse_saved); _parse_saved = NULL; }
+  / DOT ID
+    { _parse_saved = parse_strdup(yytext); }
+    LPAREN ID { _parse_saved2 = parse_strdup(yytext); }
+    DOT ID { _parse_saved3 = parse_strdup(yytext); }
+    RPAREN
+    { do_conn_modport(_parse_saved, _parse_saved2, _parse_saved3);
+      free(_parse_saved); _parse_saved = NULL;
+      free(_parse_saved2); _parse_saved2 = NULL;
+      free(_parse_saved3); _parse_saved3 = NULL; }
+  / DOT ID
+    { free(_parse_saved2); _parse_saved2 = NULL;
+      free(_parse_saved3); _parse_saved3 = NULL;
+      _parse_saved = parse_strdup(yytext); }
+    LPAREN expr RPAREN
+    { if (_parse_unit && _parse_unit->instance_count > 0)
+        uir_add_connection(
+            _parse_unit->instances[_parse_unit->instance_count - 1],
+            _parse_saved, expr_pop());
+      free(_parse_saved); _parse_saved = NULL; }
+  / expr
+    { if (_parse_unit) expr_pop(); }
+
+# Expressions (precedence climbing)
+
+expr <- cond_expr
+
+cond_expr <- logor_expr ( QUESTION expr COLON cond_expr
+    { if (_parse_unit) do_ternary(_parse_unit); }
+    )?
+
+logor_expr <- logand_expr ( LOR logand_expr
+    { if (_parse_unit) do_binop(_parse_unit, UIR_OP_OR); } )*
+
+logand_expr <- bitor_expr ( LAND bitor_expr
+    { if (_parse_unit) do_binop(_parse_unit, UIR_OP_AND); } )*
+
+bitor_expr <- bitxor_expr ( OR bitxor_expr
+    { if (_parse_unit) do_binop(_parse_unit, UIR_OP_OR); } )*
+
+bitxor_expr <- bitand_expr ( XOR bitand_expr
+    { if (_parse_unit) do_binop(_parse_unit, UIR_OP_XOR); } )*
+
+bitand_expr <- eq_expr ( AND eq_expr
+    { if (_parse_unit) do_binop(_parse_unit, UIR_OP_AND); } )*
+
+eq_expr <- rel_expr ( EQ rel_expr
+    { if (_parse_unit) do_binop(_parse_unit, UIR_OP_EQ); }
+    / NEQ rel_expr
+    { if (_parse_unit) do_binop(_parse_unit, UIR_OP_NEQ); }
+    )*
+
+rel_expr <- shift_expr ( LT shift_expr
+    { if (_parse_unit) do_binop(_parse_unit, UIR_OP_LT); }
+    / GT shift_expr
+    { if (_parse_unit) do_binop(_parse_unit, UIR_OP_GT); }
+    / LE shift_expr
+    { if (_parse_unit) do_binop(_parse_unit, UIR_OP_LE); }
+    / GE shift_expr
+    { if (_parse_unit) do_binop(_parse_unit, UIR_OP_GE); }
+    )*
+
+shift_expr <- add_expr ( SHL add_expr
+    { if (_parse_unit) do_binop(_parse_unit, UIR_OP_SHL); }
+    / ASR add_expr
+    { if (_parse_unit) do_binop(_parse_unit, UIR_OP_SRA); }
+    / SHR add_expr
+    { if (_parse_unit) do_binop(_parse_unit, UIR_OP_SHR); }
+    )*
+
+add_expr <- mul_expr ( PLUS mul_expr
+    { if (_parse_unit) do_binop(_parse_unit, UIR_OP_ADD); }
+    / MINUS mul_expr
+    { if (_parse_unit) do_binop(_parse_unit, UIR_OP_SUB); }
+    )*
+
+mul_expr <- unary_expr ( STAR unary_expr
+    { if (_parse_unit) do_binop(_parse_unit, UIR_OP_MUL); }
+    / SLASH unary_expr
+    { if (_parse_unit) do_binop(_parse_unit, UIR_OP_DIV); }
+    / PERCENT unary_expr
+    { if (_parse_unit) do_binop(_parse_unit, UIR_OP_MOD); }
+    )*
+
+unary_expr <- PLUS unary_expr
+    { if (_parse_unit) do_unop(_parse_unit, UIR_OP_NEG); }
+    / MINUS unary_expr
+    { if (_parse_unit) do_unop(_parse_unit, UIR_OP_NEG); }
+    / TILDE AND unary_expr
+    { if (_parse_unit) do_unop(_parse_unit, UIR_OP_REDUCE_NAND); }
+    / TILDE OR unary_expr
+    { if (_parse_unit) do_unop(_parse_unit, UIR_OP_REDUCE_NOR); }
+    / TILDE XOR unary_expr
+    { if (_parse_unit) do_unop(_parse_unit, UIR_OP_REDUCE_XNOR); }
+    / XOR TILDE unary_expr
+    { if (_parse_unit) do_unop(_parse_unit, UIR_OP_REDUCE_XNOR); }
+    / TILDE unary_expr
+    { if (_parse_unit) do_unop(_parse_unit, UIR_OP_NOT); }
+    / LNOT unary_expr
+    { if (_parse_unit) do_unop(_parse_unit, UIR_OP_NOT); }
+    / AND unary_expr
+    { if (_parse_unit) do_unop(_parse_unit, UIR_OP_REDUCE_AND); }
+    / OR unary_expr
+    { if (_parse_unit) do_unop(_parse_unit, UIR_OP_REDUCE_OR); }
+    / XOR unary_expr
+    { if (_parse_unit) do_unop(_parse_unit, UIR_OP_REDUCE_XOR); }
+    / primary_expr
+
+primary_expr <- LPAREN expr RPAREN
+    / SYS_SIGNED LPAREN expr RPAREN
+        { if (_parse_unit) do_sys_func_expr1(_parse_unit, UIR_SYS_FUNC_SIGNED); }
+    / SYS_UNSIGNED LPAREN expr RPAREN
+        { if (_parse_unit) do_sys_func_expr1(_parse_unit, UIR_SYS_FUNC_UNSIGNED); }
+    / SYS_CLOG2 LPAREN expr RPAREN
+        { if (_parse_unit) do_sys_func_expr1(_parse_unit, UIR_SYS_FUNC_CLOG2); }
+    / SYS_TIME LPAREN RPAREN
+        { if (_parse_unit) do_sys_func_expr0(_parse_unit, UIR_SYS_FUNC_TIME); }
+    / SYS_TIME
+        { if (_parse_unit) do_sys_func_expr0(_parse_unit, UIR_SYS_FUNC_TIME); }
+    / SYS_REALTIME LPAREN RPAREN
+        { if (_parse_unit) do_sys_func_expr0(_parse_unit, UIR_SYS_FUNC_REALTIME); }
+    / SYS_REALTIME
+        { if (_parse_unit) do_sys_func_expr0(_parse_unit, UIR_SYS_FUNC_REALTIME); }
+    / SYS_RANDOM LPAREN expr RPAREN
+        { if (_parse_unit) do_sys_func_expr1(_parse_unit, UIR_SYS_FUNC_RANDOM); }
+    / SYS_RANDOM LPAREN RPAREN
+        { if (_parse_unit) do_sys_func_expr0(_parse_unit, UIR_SYS_FUNC_RANDOM); }
+    / SYS_RANDOM
+        { if (_parse_unit) do_sys_func_expr0(_parse_unit, UIR_SYS_FUNC_RANDOM); }
+    / SYS_FOPEN LPAREN STRING RPAREN
+        { if (_parse_unit) do_sys_func_fopen_stub(_parse_unit); }
+    / ID LBRACKET { _parse_array_id = parse_strdup(yytext); } expr PLUSCOLON expr RBRACKET
+        { uir_node_t *_ps_width = expr_pop(); uir_node_t *_ps_base = expr_pop();
+          if (_parse_unit) do_indexed_part_select(_parse_unit, _parse_array_id, _ps_base, _ps_width, 1);
+          free(_parse_array_id); _parse_array_id = NULL; }
+    / ID LBRACKET { _parse_array_id = parse_strdup(yytext); } expr MINUSCOLON expr RBRACKET
+        { uir_node_t *_ps_width = expr_pop(); uir_node_t *_ps_base = expr_pop();
+          if (_parse_unit) do_indexed_part_select(_parse_unit, _parse_array_id, _ps_base, _ps_width, -1);
+          free(_parse_array_id); _parse_array_id = NULL; }
+    / ID LBRACKET { _parse_array_id = parse_strdup(yytext); } expr COLON expr RBRACKET
+        { uir_node_t *_ps_lo = expr_pop(); uir_node_t *_ps_hi = expr_pop();
+          if (_parse_unit) do_part_select(_parse_unit, _parse_array_id, _ps_hi, _ps_lo);
+          free(_parse_array_id); _parse_array_id = NULL; }
+    / ID LBRACKET { _parse_multi_id = parse_strdup(yytext); _parse_multi_index_count = 0; }
+        expr RBRACKET
+        { _parse_multi_indices[_parse_multi_index_count++] = expr_pop(); }
+        ( LBRACKET expr RBRACKET
+          { _parse_multi_indices[_parse_multi_index_count++] = expr_pop(); } )+
+        { if (_parse_unit) do_multi_index_ref(_parse_unit);
+          free(_parse_multi_id); _parse_multi_id = NULL; }
+    / ID LBRACKET { _parse_array_id = parse_strdup(yytext); _parse_saved = _parse_array_id; } expr RBRACKET
+        { uir_node_t *_idx = expr_pop();
+          if (_parse_unit) expr_push(uir_make_ref_index(_parse_unit, _parse_saved, _idx, parse_loc()));
+          free(_parse_saved); _parse_saved = NULL;
+          free(_parse_array_id); _parse_array_id = NULL; }
+    / ID { _parse_func_call_sp = _expr_sp; _parse_func_call_name = parse_strdup(yytext); } LPAREN expr_list RPAREN
+        { if (_parse_unit) do_func_call_expr(_parse_unit, _parse_func_call_name); free(_parse_func_call_name); _parse_func_call_name = NULL; }
+    / ID { if (_parse_unit) expr_push(make_ref_implicit(_parse_unit, yytext, parse_loc())); }
+    / NUMBER { if (_parse_unit) expr_push(parse_number_literal(_parse_unit, yytext, parse_loc())); }
+    / concat_expr
+
+concat_expr <- LBRACE NUMBER { _parse_repl_count = atoi(yytext); }
+               { _parse_concat_sp = _expr_sp; }
+               LBRACE expr RBRACE
+               { if (_parse_unit) do_replicate(_parse_unit); }
+               ( COMMA expr_list )? RBRACE
+               { if (_parse_unit) do_concat(_parse_unit); }
+             / LBRACE { _parse_concat_sp = _expr_sp; } expr_list RBRACE
+               { if (_parse_unit) do_concat(_parse_unit); }
+
+expr_list <- ( expr ( COMMA expr )* )?
+
+const_expr <- expr
+
+# Lexical rules
+
+KW_MODULE     <- "module"       !alnum spacing
+KW_ENDMODULE  <- "endmodule"    !alnum spacing
+KW_INPUT      <- "input"        !alnum spacing
+KW_OUTPUT     <- "output"       !alnum spacing
+KW_INOUT      <- "inout"        !alnum spacing
+KW_WIRE       <- "wire"         !alnum spacing
+KW_TRI        <- "tri"          !alnum spacing
+KW_WAND       <- "wand"         !alnum spacing
+KW_WOR        <- "wor"          !alnum spacing
+KW_TRI0       <- "tri0"         !alnum spacing
+KW_TRI1       <- "tri1"         !alnum spacing
+KW_TRIAND     <- "triand"       !alnum spacing
+KW_TRIOR      <- "trior"        !alnum spacing
+KW_TRIREG     <- "trireg"       !alnum spacing
+KW_SUPPLY0    <- "supply0"      !alnum spacing
+KW_SUPPLY1    <- "supply1"      !alnum spacing
+KW_UWIRE      <- "uwire"        !alnum spacing
+KW_REG        <- "reg"          !alnum spacing
+KW_INTEGER    <- "integer"      !alnum spacing
+KW_LOGIC      <- "logic"        !alnum spacing
+KW_INTERFACE  <- "interface"    !alnum spacing
+KW_ENDINTERFACE <- "endinterface" !alnum spacing
+KW_MODPORT    <- "modport"      !alnum spacing
+KW_PACKAGE    <- "package"      !alnum spacing
+KW_ENDPACKAGE <- "endpackage"    !alnum spacing
+KW_IMPORT     <- "import"       !alnum spacing
+DBL_COLON     <- "::" spacing
+KW_ASSIGN     <- "assign"       !alnum spacing
+KW_ALWAYS     <- "always"       !alnum spacing
+KW_ALWAYS_COMB <- "always_comb" !alnum spacing
+KW_ALWAYS_FF  <- "always_ff"    !alnum spacing
+KW_ALWAYS_LATCH <- "always_latch" !alnum spacing
+KW_INITIAL    <- "initial"      !alnum spacing
+KW_BEGIN      <- "begin"        !alnum spacing
+KW_END        <- "end"          !alnum spacing
+KW_IF         <- "if"           !alnum spacing
+KW_ELSE       <- "else"         !alnum spacing
+KW_CASE       <- "case"         !alnum spacing
+KW_CASEX      <- "casex"        !alnum spacing
+KW_CASEZ      <- "casez"        !alnum spacing
+KW_ENDCASE    <- "endcase"      !alnum spacing
+KW_FOR        <- "for"          !alnum spacing
+KW_GENVAR     <- "genvar"       !alnum spacing
+KW_GENERATE   <- "generate"     !alnum spacing
+KW_ENDGENERATE<- "endgenerate"  !alnum spacing
+KW_POSEDGE    <- "posedge"      !alnum spacing
+KW_NEGEDGE    <- "negedge"      !alnum spacing
+KW_PARAMETER  <- "parameter"    !alnum spacing
+KW_LOCALPARAM <- "localparam"   !alnum spacing
+KW_DEFAULT    <- "default"      !alnum spacing
+KW_FOREVER    <- "forever"      !alnum spacing
+KW_REPEAT     <- "repeat"       !alnum spacing
+KW_WHILE      <- "while"        !alnum spacing
+KW_FUNCTION   <- "function"     !alnum spacing
+KW_ENDFUNCTION<- "endfunction"  !alnum spacing
+KW_TASK       <- "task"         !alnum spacing
+KW_ENDTASK    <- "endtask"      !alnum spacing
+KW_EVENT      <- "event"        !alnum spacing
+KW_WAIT      <- "wait"         !alnum spacing
+KW_DISABLE   <- "disable"      !alnum spacing
+KW_OR         <- "or"           !alnum spacing
+KW_AUTOMATIC  <- "automatic"    !alnum spacing
+KW_SIGNED     <- "signed"       !alnum spacing
+KW_FORCE      <- "force"        !alnum spacing
+KW_RELEASE    <- "release"      !alnum spacing
+KW_DEFPARAM   <- "defparam"     !alnum spacing
+KW_SPECIFY    <- "specify"      !alnum spacing
+KW_ENDSPECIFY <- "endspecify"   !alnum spacing
+KW_SPECPARAM  <- "specparam"    !alnum spacing
+KW_PRIMITIVE   <- "primitive"   !alnum spacing
+KW_ENDPRIMITIVE<- "endprimitive"!alnum spacing
+KW_TABLE       <- "table"       !alnum spacing
+KW_ENDTABLE    <- "endtable"    !alnum spacing
+SYS_READMEMH  <- "$readmemh"  !alnum spacing
+SYS_WRITEMEMH <- "$writememh" !alnum spacing
+SYS_DISPLAY   <- "$display"   !alnum spacing
+SYS_WRITE     <- "$write"     !alnum spacing
+SYS_MONITOR   <- "$monitor"   !alnum spacing
+SYS_STOP      <- "$stop"      !alnum spacing
+SYS_FINISH    <- "$finish"    !alnum spacing
+SYS_FATAL     <- "$fatal"     !alnum spacing
+SYS_ERROR     <- "$error"     !alnum spacing
+SYS_WARNING   <- "$warning"   !alnum spacing
+SYS_INFO      <- "$info"      !alnum spacing
+SYS_SIGNED    <- "$signed"    !alnum spacing
+SYS_UNSIGNED  <- "$unsigned"  !alnum spacing
+SYS_CLOG2     <- "$clog2"     !alnum spacing
+SYS_TIME      <- "$time"      !alnum spacing
+SYS_REALTIME  <- "$realtime"  !alnum spacing
+SYS_RANDOM    <- "$random"    !alnum spacing
+SYS_SDF_ANNOTATE <- "$sdf_annotate" !alnum spacing
+SYS_SETUP     <- "$setup"     !alnum spacing
+SYS_HOLD      <- "$hold"      !alnum spacing
+SYS_SETUPHOLD <- "$setuphold" !alnum spacing
+SYS_WIDTH     <- "$width"     !alnum spacing
+SYS_PERIOD    <- "$period"    !alnum spacing
+SYS_DUMPFILE  <- "$dumpfile"  !alnum spacing
+SYS_DUMPVARS  <- "$dumpvars"  !alnum spacing
+SYS_DUMPON    <- "$dumpon"    !alnum spacing
+SYS_DUMPOFF   <- "$dumpoff"   !alnum spacing
+SYS_VALUE_PLUSARGS <- "$value$plusargs" !alnum spacing
+SYS_TEST_PLUSARGS <- "$test$plusargs"  !alnum spacing
+SYS_FOPEN     <- "$fopen"     !alnum spacing
+SYS_FWRITE    <- "$fwrite"    !alnum spacing
+SYS_FDISPLAY  <- "$fdisplay"  !alnum spacing
+SYS_FCLOSE    <- "$fclose"    !alnum spacing
+SYS_TIMEFORMAT <- "$timeformat" !alnum spacing
+
+SYS_PRINTTIMESCALE <- "$printtimescale" !alnum spacing
+
+ATTR_OPEN     <- "(*" spacing
+ATTR_CLOSE    <- "*)" spacing
+PLUSCOLON     <- "+:" spacing
+MINUSCOLON    <- "-:" spacing
+
+ID <- < [a-zA-Z_$] [a-zA-Z0-9_$]* > spacing
+# sized constants: <width>'<base><digits> or plain decimal
+# ? and Z/z for casez don't-care, X/x for casex
+NUMBER <- < ( digit+ "'" [sS]? [bBdDoOhH] [0-9a-fA-F_?ZzXx]+ / digit+ ) > spacing
+STRING <- '"' < ( !'"' . )* > '"' spacing
+
+LPAREN    <- '(' spacing
+RPAREN    <- ')' spacing
+LBRACKET  <- '[' spacing
+RBRACKET  <- ']' spacing
+LBRACE    <- '{' spacing
+RBRACE    <- '}' spacing
+SEMI      <- ';' spacing
+COMMA     <- ',' spacing
+DOT       <- '.' spacing
+COLON     <- ':' spacing
+QUESTION  <- '?' spacing
+AT        <- '@' spacing
+HASH      <- '#' spacing
+
+ASSIGN    <- '=' !'=' spacing
+ARROW     <- "->" spacing
+PATT_SEP  <- "=>" spacing
+PLUS      <- '+' spacing
+MINUS     <- '-' spacing
+FULL_SEP  <- "*>" spacing
+STAR      <- '*' spacing
+SLASH     <- '/' spacing
+PERCENT   <- '%' spacing
+AND       <- '&' !'&' spacing
+OR        <- '|' !'|' spacing
+XOR       <- '^' spacing
+TILDE     <- '~' spacing
+
+EQ        <- '==' spacing
+NEQ       <- '!=' spacing
+LE        <- '<=' spacing
+GE        <- '>=' spacing
+SHL       <- '<<' spacing
+ASR       <- '>>>' spacing
+SHR       <- '>>' spacing
+LAND      <- '&&' spacing
+LOR       <- '||' spacing
+LNOT      <- '!' !'=' spacing
+
+LT        <- '<' !( '=' / '<' ) spacing
+GT        <- '>' !( '=' / '>' ) spacing
+
+spacing       <- ( [ \t\r\n] / line_comment / block_comment )*
+line_comment  <- "//" ( !'\n' . )*
+block_comment <- "/*" ( !"*/" . )* "*/"
+alnum         <- [a-zA-Z0-9_$]
+digit         <- [0-9]

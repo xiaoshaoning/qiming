@@ -1,0 +1,21 @@
+{
+  "$schema": "https://raw.githubusercontent.com/nicehash/tauri/dev/crates/tauri-config-schema/schema.json",
+  "productName": "Qiming Simulator",
+  "version": "0.1.0",
+  "identifier": "com.qiming.simulator",
+  "build": {
+    "frontendDist": "../webview/dist",
+    "devUrl": "http://localhost:5173",
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Qiming Simulator",
+        "width": 1280,
+        "height": 800
+      }
+    ]
+  }
+}

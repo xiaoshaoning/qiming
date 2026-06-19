@@ -1,0 +1,12 @@
+{
+  "benchmark": "4-bit counter (force clock + step_delta)",
+  "compile_ms": "0.1",
+  "delta_steps": 10000,
+  "elaborate_ms": "0.0",
+  "host": "windows",
+  "simulation_ms": "2.5",
+  "steps_done": 10000,
+  "steps_per_sec": "3963850",
+  "timestamp": "2026-05-04T20:00:35Z",
+  "wave_entries": 10001
+}

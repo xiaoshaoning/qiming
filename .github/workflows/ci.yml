@@ -1,0 +1,163 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master, phase*]
+  pull_request:
+    branches: [main, master]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # ── C library build + test (fastest feedback) ──
+  c-tests:
+    name: C tests
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install C dependencies
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq cmake gcc golang-go
+
+      - name: Install PEG parser generator
+        run: go install github.com/pointlander/peg@v0.1.20
+
+      - name: Add Go bin to PATH
+        run: echo "$HOME/go/bin" >> $GITHUB_PATH
+
+      - name: Configure CMake
+        run: cmake -B build -S libqsim -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTING=ON
+
+      - name: Build and run C tests
+        run: |
+          cmake --build build --target qsim_test
+          ctest --test-dir build --output-on-failure -R qsim_test
+
+  # ── Rust build + unit tests ──
+  rust-tests:
+    name: Rust tests
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install C dependencies
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq cmake gcc golang-go libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - name: Install PEG parser generator
+        run: go install github.com/pointlander/peg@v0.1.20
+
+      - name: Add Go bin to PATH
+        run: echo "$HOME/go/bin" >> $GITHUB_PATH
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build (with tests)
+        run: cargo build --manifest-path src-tauri/Cargo.toml --tests
+
+      - name: Run Rust tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+
+  # ── Python integration tests against MCP TCP server ──
+  python-integration:
+    name: Python integration tests
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install C dependencies + netcat
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq cmake gcc golang-go netcat-openbsd
+
+      - name: Install PEG parser generator
+        run: go install github.com/pointlander/peg@v0.1.20
+
+      - name: Add Go bin to PATH
+        run: echo "$HOME/go/bin" >> $GITHUB_PATH
+
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build qsim binary
+        run: cargo build --manifest-path src-tauri/Cargo.toml --bin qsim
+
+      - name: Start MCP TCP server and run integration tests
+        run: |
+          # Start the MCP TCP server in the background
+          ./src-tauri/target/debug/qsim mcp --tcp 127.0.0.1:9876 &
+          MCP_PID=$!
+
+          # Wait for server to accept connections (up to 30s)
+          for i in $(seq 1 30); do
+            if nc -z 127.0.0.1 9876 2>/dev/null; then
+              echo "MCP server ready after ${i}s"
+              break
+            fi
+            sleep 1
+          done
+
+          # Run basic and integration tests
+          cd python
+          python tests/test_basic.py
+          python tests/test_integration.py
+
+          # Stop the server
+          kill $MCP_PID 2>/dev/null || true
+          wait $MCP_PID 2>/dev/null || true
+
+  # ── Performance benchmark (master branch only) ──
+  performance:
+    name: Performance
+    runs-on: ubuntu-22.04
+    if: github.ref == 'refs/heads/master'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install C dependencies
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq cmake gcc golang-go
+
+      - name: Install PEG parser generator
+        run: go install github.com/pointlander/peg@v0.1.20
+
+      - name: Add Go bin to PATH
+        run: echo "$HOME/go/bin" >> $GITHUB_PATH
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build qsim binary
+        run: cargo build --manifest-path src-tauri/Cargo.toml --bin qsim --release
+
+      - name: Run benchmark
+        run: |
+          RESULT="bench_result.json"
+          BASELINE="docs/bench_baseline_linux.json"
+          ./src-tauri/target/release/qsim bench --save "$RESULT"
+
+          if [ ! -f "$BASELINE" ]; then
+            echo "No Linux baseline found — saving current result as baseline."
+            cp "$RESULT" "$BASELINE"
+            echo "Commit the new baseline: docs/bench_baseline_linux.json"
+          else
+            python3 -c "
+import json
+base = json.load(open('$BASELINE'))
+curr = json.load(open('$RESULT'))
+base_steps = float(base['steps_per_sec'])
+curr_steps = float(curr['steps_per_sec'])
+ratio = curr_steps / base_steps
+print(f'Baseline: {base_steps:.0f} steps/sec')
+print(f'Current:  {curr_steps:.0f} steps/sec')
+print(f'Ratio:    {ratio:.3f}')
+if ratio < 0.9:
+    print('FAIL: Performance regression >10%')
+    exit(1)
+else:
+    print('PASS: Performance OK')
+"
+          fi

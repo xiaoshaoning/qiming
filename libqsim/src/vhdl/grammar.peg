@@ -1,0 +1,683 @@
+# VHDL IEEE 1076-2008 subset PEG grammar
+# Embedded C actions build UIR nodes via the libqsim API.
+# Context variables and helper functions defined in vhdl_parser.c.
+# Restrictions: actions must not contain '}' characters (peg limitation).
+# Case-insensitive matching via "keyword flag.
+
+# Grammar rules
+
+design_file <- spacing ( library_clause / use_clause )*
+    ( entity_decl architecture_body? { _parse_ok = 1; }
+    / package_decl { _parse_ok = 1; }
+    / package_body { _parse_ok = 1; }
+    / configuration_decl { _parse_ok = 1; }
+    )
+
+# ── Library and use clauses ──
+
+library_clause <- KW_LIBRARY ID_OR_KW SEMI
+    { store_library_name(yytext); }
+
+use_clause <- KW_USE ID_OR_KW
+    { _parse_saved = parse_strdup(yytext); }
+    DOT ID_OR_KW
+    { _parse_saved2 = parse_strdup(yytext); }
+    ( DOT ID_OR_KW { _parse_saved3 = parse_strdup(yytext); } SEMI { store_use_clause3(); }
+    / SEMI { store_use_clause2(); }
+    )
+
+# ── Entity declaration ──
+
+entity_decl <- KW_ENTITY ID_OR_KW
+    { _parse_unit = uir_create_design_unit(yytext, "vhdl", parse_loc()); }
+    KW_IS port_clause? KW_END (KW_ENTITY)? ID_OR_KW? SEMI
+
+port_clause <- KW_PORT LPAREN port_list RPAREN SEMI
+
+port_list <- port_item ( SEMI port_item )* SEMI?
+
+port_item <- ID
+    { id_list_add(yytext); }
+    ( COMMA ID
+        { id_list_add(yytext); }
+    )*
+    COLON mode? type_spec
+    ( LPAREN range RPAREN { _parse_saved_array_size = (uint32_t)_parse_range_width; } )?
+    { finish_port_items(); }
+
+mode <- KW_IN    { _parse_port_dir = UIR_PORT_IN; }
+     / KW_OUT   { _parse_port_dir = UIR_PORT_OUT; }
+     / KW_INOUT { _parse_port_dir = UIR_PORT_INOUT; }
+     / ID_OR_KW { _parse_port_dir = UIR_PORT_IN; }
+
+mode_no_fallback <- KW_IN    { _parse_port_dir = UIR_PORT_IN; }
+                  / KW_OUT   { _parse_port_dir = UIR_PORT_OUT; }
+                  / KW_INOUT { _parse_port_dir = UIR_PORT_INOUT; }
+
+subprog_port_list <- subprog_port_item ( SEMI subprog_port_item )* SEMI?
+
+subprog_port_item <- ID
+    { id_list_add(yytext); }
+    ( COMMA ID
+        { id_list_add(yytext); }
+    )*
+    COLON mode_no_fallback? type_spec
+    { finish_port_items(); }
+
+type_spec <- KW_STD_LOGIC_VECTOR LPAREN range RPAREN
+    { _parse_saved_range_width = _parse_range_width; _parse_init_state = QSIM_X; }
+  / KW_SIGNED LPAREN range RPAREN
+    { _parse_saved_range_width = _parse_range_width; _parse_init_state = QSIM_X; }
+  / KW_UNSIGNED LPAREN range RPAREN
+    { _parse_saved_range_width = _parse_range_width; _parse_init_state = QSIM_X; }
+  / KW_BIT_VECTOR LPAREN range RPAREN
+    { _parse_saved_range_width = _parse_range_width; _parse_init_state = QSIM_0; }
+  / KW_STD_LOGIC  { _parse_saved_range_width = 1; _parse_init_state = QSIM_X; }
+  / KW_INTEGER range_opt { _parse_saved_range_width = 32; _parse_init_state = QSIM_X; }
+  / KW_NATURAL range_opt { _parse_saved_range_width = 32; _parse_init_state = QSIM_0; }
+  / KW_POSITIVE range_opt { _parse_saved_range_width = 32; _parse_init_state = QSIM_0; }
+  / KW_BOOLEAN   { _parse_saved_range_width = 1; _parse_init_state = QSIM_0; }
+  / KW_BIT       { _parse_saved_range_width = 1; _parse_init_state = QSIM_0; }
+  / KW_CHARACTER { _parse_saved_range_width = 8; _parse_init_state = QSIM_X; }
+  / KW_REAL      { _parse_saved_range_width = 64; _parse_init_state = QSIM_X; }
+  / ID_OR_KW     { vhdl_type_spec_id(yytext); }
+
+range_opt <- ( KW_RANGE range )?
+
+range <- expr direction expr
+    { vhdl_compute_range(); }
+
+direction <- KW_TO / KW_DOWNTO
+
+# ── Architecture body ──
+
+architecture_body <- KW_ARCH ID_OR_KW KW_OF ID_OR_KW KW_IS
+    decl_part KW_BEGIN concurrent_stmt* KW_END (KW_ARCH)? (ID_OR_KW)? SEMI
+
+decl_part <- ( file_decl / signal_decl / variable_decl / constant_decl / alias_decl / group_decl / attr_spec / type_decl / subtype_decl / component_decl / function_decl / procedure_decl )*
+
+signal_decl <- KW_SIGNAL ID
+    { id_list_add(yytext); _parse_signal_is_bit_type = 0; }
+    ( COMMA ID
+        { id_list_add(yytext); }
+    )*
+    COLON type_spec
+    ( LPAREN range RPAREN { _parse_saved_array_size = (uint32_t)_parse_range_width; } )?
+    { finish_signal_decls(UIR_SIG_VHDL_SIGNAL); }
+    ( ASSIGN expr )? SEMI
+
+file_decl <- KW_FILE ID
+    { id_list_add(yytext); _parse_file_mode = NULL; _parse_file_name_str = NULL; }
+    ( COMMA ID
+        { id_list_add(yytext); }
+    )*
+    COLON type_spec
+    ( KW_OPEN ID_OR_KW
+        { _parse_file_mode = parse_strdup(yytext); }
+    )?
+    ( KW_IS STRING
+        { _parse_file_name_str = parse_strdup(yytext); }
+    )? SEMI
+    { finish_file_decls(); }
+
+variable_decl <- KW_VARIABLE ID
+    { id_list_add(yytext); }
+    ( COMMA ID
+        { id_list_add(yytext); }
+    )*
+    COLON type_spec
+    ( LPAREN range RPAREN { _parse_saved_array_size = (uint32_t)_parse_range_width; } )?
+    { finish_signal_decls(UIR_SIG_VHDL_VARIABLE); }
+    ( ASSIGN expr )? SEMI
+
+constant_decl <- KW_CONSTANT ID
+    { id_list_add(yytext); }
+    ( COMMA ID { id_list_add(yytext); } )*
+    COLON type_spec ASSIGN expr SEMI
+    { finish_constant_decls(); }
+
+alias_decl <- KW_ALIAS ID_OR_KW
+    { vhdl_alias_enter(yytext); }
+    KW_IS ID_OR_KW
+    { vhdl_alias_set_target(yytext); }
+    SEMI { vhdl_alias_finish(); }
+
+group_decl <- KW_GROUP ID_OR_KW
+    { vhdl_group_save_name(yytext); }
+    ( KW_IS LPAREN { vhdl_group_begin(1, NULL); }
+    / COLON ID_OR_KW LPAREN { vhdl_group_begin(2, yytext); } )
+    ( ID_OR_KW { vhdl_group_add_constituent(yytext); }
+      ( COMMA ID_OR_KW { vhdl_group_add_constituent(yytext); } )* )?
+    RPAREN SEMI { vhdl_group_finish(); }
+
+attr_spec <- KW_ATTRIBUTE ID_OR_KW
+    { vhdl_attr_spec_begin(yytext); }
+    KW_OF ID_OR_KW
+    { vhdl_attr_spec_set_target(yytext); }
+    COLON ID_OR_KW
+    { vhdl_attr_spec_set_class(yytext); }
+    KW_IS expr SEMI
+    { vhdl_attr_spec_finish(); }
+
+# ── Type and subtype declarations ──
+
+type_decl <- KW_TYPE ID_OR_KW
+    { vhdl_type_enter(yytext, 0); }
+    KW_IS type_def SEMI { vhdl_type_finish(); }
+
+type_def <- LPAREN ID_OR_KW { vhdl_type_add_literal(yytext); }
+    ( COMMA ID_OR_KW { vhdl_type_add_literal(yytext); } )* RPAREN
+    { vhdl_type_finish_enum(); }
+  / KW_RANGE expr direction expr
+    { vhdl_type_finish_range(); }
+  / KW_ARRAY LPAREN range { _parse_saved_array_dims[0] = (uint32_t)_parse_range_width; _parse_saved_array_dim_count = 1; }
+    ( COMMA range { _parse_saved_array_dims[_parse_saved_array_dim_count++] = (uint32_t)_parse_range_width; } )* RPAREN KW_OF type_spec
+    { vhdl_type_finish_array(); }
+  / KW_RECORD
+    record_item ( record_item )*
+    KW_END KW_RECORD { vhdl_type_finish_record(); }
+
+record_item <- ID_OR_KW { vhdl_record_item_begin(yytext); }
+    ( COMMA ID_OR_KW { vhdl_record_item_add_name(yytext); } )*
+    COLON type_spec SEMI { vhdl_record_item_finish(); }
+
+subtype_decl <- KW_SUBTYPE ID_OR_KW
+    { vhdl_subtype_enter(yytext); }
+    KW_IS ID_OR_KW { vhdl_subtype_base(yytext); }
+    (KW_RANGE expr direction expr { vhdl_subtype_set_range(); })?
+    SEMI { vhdl_subtype_finish(); }
+
+# ── Concurrent statements ──
+
+concurrent_stmt <- process_stmt / concurrent_signal_assign / component_inst / with_select_assign / generate_stmt / function_decl / procedure_decl / assert_stmt / report_stmt
+
+concurrent_signal_assign <- ID
+    { _parse_saved = parse_strdup(yytext); }
+    LE expr SEMI
+    { if (_parse_unit) do_concurrent_signal_assign(_parse_unit); }
+
+# Component instantiation: label: comp_name port map (formal => actual, ...)
+# Also supports direct entity instantiation: label: entity work.comp_name port map(...)
+component_inst <- ID_OR_KW
+    { _parse_saved = parse_strdup(yytext); }
+    COLON ( KW_ENTITY ID_OR_KW DOT ID_OR_KW
+        { if (_parse_unit) uir_add_instance(_parse_unit, _parse_saved, yytext); free(_parse_saved); _parse_saved = NULL; }
+    / ID_OR_KW
+        { if (_parse_unit) uir_add_instance(_parse_unit, _parse_saved, yytext); free(_parse_saved); _parse_saved = NULL; }
+    )
+    KW_PORT KW_MAP LPAREN port_map_list RPAREN SEMI
+
+port_map_list <- ( port_map_item ( COMMA port_map_item )* )?
+port_map_item <- ID_OR_KW
+    { _parse_saved = parse_strdup(yytext); }
+    ARROW ( KW_OPEN
+        { vhdl_port_map_open(_parse_saved); free(_parse_saved); _parse_saved = NULL; }
+    / expr
+        { vhdl_port_map_connect(_parse_saved); free(_parse_saved); _parse_saved = NULL; }
+    )
+
+# ── Process ──
+
+process_stmt <- (ID_OR_KW COLON
+    { _parse_saved = parse_strdup(yytext); }
+  )?
+    KW_PROCESS
+    { start_vhdl_process(_parse_unit, _parse_saved); _parse_saved = NULL; }
+    ( LPAREN KW_ALL RPAREN { vhdl_process_all(); }
+    / LPAREN sens_list RPAREN
+    )? KW_IS? decl_part KW_BEGIN stmt* KW_END (KW_PROCESS)? (ID_OR_KW)? SEMI
+    { finish_vhdl_process(); }
+
+sens_list <- ID
+    { record_sensitivity(yytext); }
+    ( COMMA ID
+        { record_sensitivity(yytext); }
+    )*
+
+# ── Sequential statements ──
+
+stmt <- if_stmt / case_stmt / for_loop / wait_stmt / exit_stmt / next_stmt / return_stmt / assert_stmt / report_stmt / signal_assign / variable_assign / with_select_assign / null_stmt / procedure_call
+
+signal_assign <- ID
+    { _parse_saved = parse_strdup(yytext); _parse_target_hi = NULL; _parse_target_lo = NULL; }
+    ( LPAREN expr direction expr RPAREN
+        { _parse_target_lo = expr_pop(); _parse_target_hi = expr_pop(); }
+    / LPAREN expr RPAREN
+        { _parse_target_hi = expr_pop(); _parse_target_lo = _parse_target_hi; }
+    )?
+    LE expr SEMI
+    { if (_parse_unit) do_ext_sig_assign(_parse_unit); free(_parse_saved); _parse_saved = NULL; }
+
+variable_assign <- ID
+    { _parse_saved = parse_strdup(yytext); _parse_target_hi = NULL; _parse_target_lo = NULL; }
+    ( LPAREN expr direction expr RPAREN
+        { _parse_target_lo = expr_pop(); _parse_target_hi = expr_pop(); }
+    / LPAREN expr RPAREN
+        { _parse_target_hi = expr_pop(); _parse_target_lo = _parse_target_hi; }
+    )?
+    ASSIGN expr SEMI
+    { if (_parse_unit) do_ext_var_assign(_parse_unit); free(_parse_saved); _parse_saved = NULL; }
+
+# ── If statement ──
+
+if_stmt <- KW_IF expr KW_THEN
+    { vhdl_if_then_start(); }
+    stmt*
+    (KW_ELSIF expr KW_THEN
+        { vhdl_if_elsif_start(); }
+        stmt*)*
+    (KW_ELSE
+        { vhdl_if_else_start(); }
+        stmt*)?
+    KW_END KW_IF SEMI
+    { vhdl_if_finish(); }
+
+# ── Case statement ──
+
+case_stmt <- KW_CASE expr KW_IS
+    { vhdl_case_enter(); }
+    case_item+ KW_END KW_CASE SEMI
+    { vhdl_case_finish(_parse_unit); }
+
+case_item <- KW_WHEN KW_OTHERS ARROW
+    { if (_parse_unit) vhdl_case_default_enter(_parse_unit); }
+    stmt*
+    { vhdl_case_default_finish(); }
+  / KW_WHEN choices ARROW
+    { vhdl_case_item_enter(_parse_unit); }
+    stmt*
+    { vhdl_case_item_finish(_parse_unit); }
+
+choices <- choice ( BAR choice )*
+choice <- KW_OTHERS / expr (KW_TO expr)?
+
+# ── For loop ──
+
+for_loop <- KW_FOR ID_OR_KW
+    { _parse_saved = parse_strdup(yytext); }
+    KW_IN range KW_LOOP
+    { if (_parse_unit) vhdl_for_loop_enter(_parse_unit, _parse_saved); free(_parse_saved); _parse_saved = NULL; }
+    stmt* KW_END KW_LOOP SEMI
+    { if (_parse_unit) vhdl_for_loop_finish(_parse_unit); }
+
+# ── Wait, exit, next, return statements ──
+
+wait_stmt <- KW_WAIT ( wait_on_clause / wait_until_clause / wait_for_clause )* SEMI
+    { vhdl_do_wait(_parse_unit); }
+
+wait_on_clause <- KW_ON ID
+    { vhdl_wait_on_name(yytext); }
+    ( COMMA ID
+        { vhdl_wait_on_name(yytext); }
+    )*
+
+wait_until_clause <- KW_UNTIL expr
+    { vhdl_wait_until_expr(); }
+
+wait_for_clause <- KW_FOR expr
+    { vhdl_wait_for_expr(); }
+
+exit_stmt <- KW_EXIT ( ID_OR_KW { _parse_saved = parse_strdup(yytext); } )? SEMI
+    { if (_parse_unit) vhdl_do_exit(_parse_unit, _parse_saved); free(_parse_saved); _parse_saved = NULL; }
+
+next_stmt <- KW_NEXT ( ID_OR_KW { _parse_saved = parse_strdup(yytext); } )? SEMI
+    { if (_parse_unit) vhdl_do_next(_parse_unit, _parse_saved); free(_parse_saved); _parse_saved = NULL; }
+
+return_stmt <- KW_RETURN ( expr { _parse_ret_expr = expr_pop(); } )? SEMI
+    { if (_parse_unit) vhdl_do_return(_parse_unit); }
+
+# ── Assert and report statements ──
+assert_stmt <- KW_ASSERT expr
+    { _parse_assert_cond = expr_pop(); }
+    ( KW_REPORT expr
+        { _parse_assert_msg = expr_pop(); }
+    )?
+    ( KW_SEVERITY ID_OR_KW
+        { free(_parse_assert_sev); _parse_assert_sev = parse_strdup(yytext); }
+    )? SEMI
+    { if (_parse_unit) vhdl_do_assert(_parse_unit); }
+
+report_stmt <- KW_REPORT expr SEMI
+    { if (_parse_unit) vhdl_do_report(_parse_unit); }
+with_select_assign <- KW_WITH expr { _parse_select_selector = expr_pop(); }
+    KW_SELECT ID_OR_KW { _parse_select_target = parse_strdup(yytext); }
+    LE expr { _parse_select_item_sp = _expr_sp - 1; }
+    KW_WHEN choices { vhdl_select_add_item(); }
+    ( COMMA expr { _parse_select_item_sp = _expr_sp - 1; }
+      KW_WHEN choices { vhdl_select_add_item(); } )*
+    SEMI
+    { vhdl_select_finish(_parse_unit); }
+
+# ── Generate blocks ──
+
+generate_stmt <- for_generate / if_generate
+
+for_generate <- ID_OR_KW
+    { _parse_saved = parse_strdup(yytext); }
+    COLON KW_FOR ID_OR_KW
+    { _parse_genvar_name = parse_strdup(yytext); }
+    KW_IN expr { _parse_gen_lo = expr_pop(); }
+    ( KW_TO { _parse_gen_direction = 1; }
+    / KW_DOWNTO { _parse_gen_direction = -1; } )
+    expr { _parse_gen_hi = expr_pop(); }
+    KW_GENERATE { vhdl_gen_for_enter(_parse_unit); }
+    concurrent_stmt* KW_END KW_GENERATE (ID_OR_KW)? SEMI
+    { vhdl_gen_for_leave(); free(_parse_saved); _parse_saved = NULL; }
+
+if_generate <- ID_OR_KW
+    { _parse_saved = parse_strdup(yytext); }
+    COLON KW_IF expr { vhdl_gen_if_cond_start(_parse_unit); }
+    KW_GENERATE concurrent_stmt*
+    (KW_ELSIF expr { if (_parse_unit) (void)expr_pop(); } KW_GENERATE concurrent_stmt*)*
+    (KW_ELSE { vhdl_gen_if_else_enter(); } KW_GENERATE concurrent_stmt*)?
+    KW_END KW_GENERATE (ID_OR_KW)? SEMI
+    { vhdl_gen_if_finish(); free(_parse_saved); _parse_saved = NULL; }
+
+# ── Subprogram declarations and calls ──
+
+function_decl <- KW_FUNCTION ID_OR_KW
+    { vhdl_func_enter(yytext, 1); }
+    (LPAREN subprog_port_list RPAREN)? KW_RETURN type_spec
+    { vhdl_func_set_return_width(_parse_saved_range_width); }
+    KW_IS decl_part KW_BEGIN { vhdl_func_body_enter(); }
+    stmt* KW_END (KW_FUNCTION)? (ID_OR_KW)? SEMI
+    { vhdl_func_leave(); }
+
+procedure_decl <- KW_PROCEDURE ID_OR_KW
+    { vhdl_func_enter(yytext, 0); }
+    (LPAREN subprog_port_list RPAREN)? KW_IS decl_part KW_BEGIN { vhdl_func_body_enter(); }
+    stmt* KW_END (KW_PROCEDURE)? (ID_OR_KW)? SEMI
+    { vhdl_func_leave(); }
+
+procedure_call <- ID_OR_KW { vhdl_proc_call_begin(yytext); }
+    ( LPAREN proc_call_arg ( COMMA proc_call_arg )* RPAREN )? SEMI
+    { vhdl_proc_call_finish(); }
+
+proc_call_arg <- ( ID_OR_KW ARROW )? expr { vhdl_save_call_arg(); }
+
+# ── Subprogram specs (package declarations, no body) ──
+
+function_spec <- KW_FUNCTION ID_OR_KW
+    { vhdl_func_spec_enter(yytext, 1); }
+    (LPAREN subprog_port_list RPAREN)? KW_RETURN type_spec
+    { vhdl_func_spec_set_return_width(_parse_saved_range_width); }
+    SEMI { vhdl_func_spec_leave(); }
+
+procedure_spec <- KW_PROCEDURE ID_OR_KW
+    { vhdl_func_spec_enter(yytext, 0); }
+    (LPAREN subprog_port_list RPAREN)? SEMI
+    { vhdl_func_spec_leave(); }
+
+pkg_decl_part <- ( signal_decl / variable_decl / constant_decl / alias_decl / group_decl / type_decl / subtype_decl / component_decl / function_spec / procedure_spec )*
+
+# ── Package declarations and bodies ──
+
+package_decl <- KW_PACKAGE ID_OR_KW
+    { _parse_unit = uir_create_design_unit(yytext, "vhdl", parse_loc()); }
+    KW_IS pkg_decl_part KW_END (KW_PACKAGE)? (ID_OR_KW)? SEMI
+
+package_body <- KW_PACKAGE KW_BODY ID_OR_KW
+    { _parse_unit = uir_create_design_unit(yytext, "vhdl", parse_loc()); }
+    KW_IS decl_part KW_END (KW_PACKAGE)? (KW_BODY)? (ID_OR_KW)? SEMI
+
+# ── Configuration declarations ──
+
+configuration_decl <- KW_CONFIGURATION ID_OR_KW
+    { vhdl_config_capture_name(yytext); }
+    KW_OF ID_OR_KW
+    { vhdl_config_capture_entity(yytext); }
+    KW_IS
+    { vhdl_config_enter(); }
+    KW_FOR ID_OR_KW
+    { vhdl_config_add_block(yytext); }
+    KW_END KW_FOR SEMI
+    KW_END (KW_CONFIGURATION)? (ID_OR_KW)? SEMI
+
+# ── Component declarations ──
+
+component_decl <- KW_COMPONENT ID_OR_KW
+    { vhdl_comp_enter(yytext); }
+    KW_IS? port_clause? KW_END KW_COMPONENT ID_OR_KW? SEMI
+    { vhdl_comp_leave(); }
+
+# ── Other statements ──
+
+null_stmt <- KW_NULL SEMI
+
+# ── Expressions (precedence climbing, lowest to highest) ──
+
+expr <- conditional_expr
+
+conditional_expr <- logical_expr
+    ( KW_WHEN logical_expr KW_ELSE conditional_expr
+      { if (_parse_unit) vhdl_do_when_else(_parse_unit); }
+    )?
+
+logical_expr <- rel_expr
+    ( KW_AND  rel_expr { if (_parse_unit) do_vhdl_binop(_parse_unit, UIR_OP_AND); }
+    / KW_OR   rel_expr { if (_parse_unit) do_vhdl_binop(_parse_unit, UIR_OP_OR); }
+    / KW_XOR  rel_expr { if (_parse_unit) do_vhdl_binop(_parse_unit, UIR_OP_XOR); }
+    / KW_NAND rel_expr { if (_parse_unit) do_vhdl_binop(_parse_unit, UIR_OP_NAND); }
+    / KW_NOR  rel_expr { if (_parse_unit) do_vhdl_binop(_parse_unit, UIR_OP_NOR); }
+    / KW_XNOR rel_expr { if (_parse_unit) do_vhdl_binop(_parse_unit, UIR_OP_XNOR); }
+    )*
+
+rel_expr <- shift_expr
+    ( EQ shift_expr { if (_parse_unit) do_vhdl_binop(_parse_unit, UIR_OP_EQ); }
+    / NEQ shift_expr { if (_parse_unit) do_vhdl_binop(_parse_unit, UIR_OP_NEQ); }
+    / LT shift_expr  { if (_parse_unit) do_vhdl_binop(_parse_unit, UIR_OP_LT); }
+    / LE shift_expr  { if (_parse_unit) do_vhdl_binop(_parse_unit, UIR_OP_LE); }
+    / GT shift_expr  { if (_parse_unit) do_vhdl_binop(_parse_unit, UIR_OP_GT); }
+    / GE shift_expr  { if (_parse_unit) do_vhdl_binop(_parse_unit, UIR_OP_GE); }
+    )*
+
+shift_expr <- add_expr
+    ( KW_SLL add_expr { if (_parse_unit) do_vhdl_binop(_parse_unit, UIR_OP_SLL); }
+    / KW_SRL add_expr { if (_parse_unit) do_vhdl_binop(_parse_unit, UIR_OP_SRL); }
+    / KW_SLA add_expr { if (_parse_unit) do_vhdl_binop(_parse_unit, UIR_OP_SLA); }
+    / KW_SRA add_expr { if (_parse_unit) do_vhdl_binop(_parse_unit, UIR_OP_SRA); }
+    / KW_ROL add_expr { if (_parse_unit) do_vhdl_binop(_parse_unit, UIR_OP_ROL); }
+    / KW_ROR add_expr { if (_parse_unit) do_vhdl_binop(_parse_unit, UIR_OP_ROR); }
+    )*
+
+add_expr <- mul_expr
+    ( PLUS mul_expr  { if (_parse_unit) do_vhdl_binop(_parse_unit, UIR_OP_ADD); }
+    / MINUS mul_expr  { if (_parse_unit) do_vhdl_binop(_parse_unit, UIR_OP_SUB); }
+    / AND mul_expr    { if (_parse_unit) do_vhdl_binop(_parse_unit, UIR_OP_CONCAT); }
+    )*
+
+mul_expr <- pow_expr
+    ( STAR  pow_expr { if (_parse_unit) do_vhdl_binop(_parse_unit, UIR_OP_MUL); }
+    / SLASH pow_expr { if (_parse_unit) do_vhdl_binop(_parse_unit, UIR_OP_DIV); }
+    / KW_MOD pow_expr { if (_parse_unit) do_vhdl_binop(_parse_unit, UIR_OP_MOD); }
+    / KW_REM pow_expr { if (_parse_unit) do_vhdl_binop(_parse_unit, UIR_OP_REM); }
+    )*
+
+pow_expr <- unary_expr
+    ( POW unary_expr  { if (_parse_unit) do_vhdl_binop(_parse_unit, UIR_OP_POW); }
+    )?
+
+unary_expr <- PLUS unary_expr
+    { if (_parse_unit) do_vhdl_unop(_parse_unit, UIR_OP_NEG); }
+  / MINUS unary_expr
+    { if (_parse_unit) do_vhdl_unop(_parse_unit, UIR_OP_NEG); }
+  / KW_NOT unary_expr
+    { if (_parse_unit) do_vhdl_unop(_parse_unit, UIR_OP_NOT); }
+  / KW_ABS unary_expr
+    { if (_parse_unit) do_vhdl_unop(_parse_unit, UIR_OP_ABS); }
+  / primary_expr
+
+primary_expr <- LPAREN KW_OTHERS ARROW expr RPAREN
+    { if (_parse_unit) vhdl_do_others_aggregate(_parse_unit); }
+  / LPAREN expr direction expr ARROW expr RPAREN
+    { if (_parse_unit) vhdl_do_range_aggregate(_parse_unit); }
+  / LPAREN expr RPAREN
+  / NUMBER      { if (_parse_unit) expr_push(parse_vhdl_number(_parse_unit, yytext, parse_loc())); }
+  / BIT_STRING  { if (_parse_unit) expr_push(parse_vhdl_bit_string(_parse_unit, yytext, parse_loc())); }
+  / CHAR        { if (_parse_unit) expr_push(parse_vhdl_char_literal(_parse_unit, yytext, parse_loc())); }
+  / KW_TRUE     { if (_parse_unit) expr_push(parse_vhdl_boolean(_parse_unit, "true", parse_loc())); }
+  / KW_FALSE    { if (_parse_unit) expr_push(parse_vhdl_boolean(_parse_unit, "false", parse_loc())); }
+  / KW_NULL     { if (_parse_unit) expr_push(parse_vhdl_boolean(_parse_unit, "false", parse_loc())); }
+  / ID_OR_KW { vhdl_selname_init(yytext); }
+    DOT ID_OR_KW { vhdl_selname_extend(yytext); }
+    ( DOT ID_OR_KW { vhdl_selname_extend(yytext); } )*
+    ( LPAREN { if (_parse_selname_buf) vhdl_push_call_name(_parse_selname_buf); _parse_call_saved_sp = _expr_sp; }
+      ( expr direction expr RPAREN { vhdl_do_selname_slice_ref(); }
+      / { _expr_sp = _parse_call_saved_sp; } expr ( COMMA expr )+ RPAREN { vhdl_do_selname_func_call(); }
+      / { _expr_sp = _parse_call_saved_sp; } expr RPAREN { vhdl_do_selname_func_call(); }
+      )
+    / { vhdl_do_selname_ref(); }
+    )
+  / ID_OR_KW { _parse_call_saved_sp = _expr_sp; strncpy(_parse_call_name, yytext, sizeof(_parse_call_name) - 1); vhdl_push_call_name(yytext); }
+    LPAREN
+    ( expr direction expr RPAREN { vhdl_do_slice_ref2(); }
+      ( LPAREN expr direction expr RPAREN { vhdl_do_dslice_adjust(); } )?
+    / { _expr_sp = _parse_call_saved_sp; } expr ( COMMA expr )+ RPAREN { vhdl_do_func_call(); }
+    / { _expr_sp = _parse_call_saved_sp; } expr RPAREN { vhdl_do_idx_ref2(); }
+    )
+  / ID_OR_KW    { if (_parse_unit) expr_push(uir_make_ref(_parse_unit, yytext, parse_loc())); }
+
+# ── Lexical rules (input is lowercased by vhdl_parse, so keywords are lowercase) ──
+
+# Entity/Architecture keywords
+KW_ENTITY       <- "entity"       !alnum spacing
+KW_ARCH         <- "architecture" !alnum spacing
+KW_OF           <- "of"           !alnum spacing
+KW_IS           <- "is"           !alnum spacing
+KW_PORT         <- "port"         !alnum spacing
+KW_SIGNAL       <- "signal"       !alnum spacing
+KW_VARIABLE     <- "variable"     !alnum spacing
+KW_CONSTANT         <- "constant"      !alnum spacing
+KW_CONFIGURATION    <- "configuration" !alnum spacing
+KW_PROCESS          <- "process"       !alnum spacing
+KW_PROCEDURE    <- "procedure"    !alnum spacing
+KW_PACKAGE      <- "package"      !alnum spacing
+KW_BEGIN        <- "begin"        !alnum spacing
+KW_END          <- "end"          !alnum spacing
+KW_IF           <- "if"           !alnum spacing
+KW_THEN         <- "then"         !alnum spacing
+KW_ELSE         <- "else"         !alnum spacing
+KW_ELSIF        <- "elsif"        !alnum spacing
+KW_CASE         <- "case"         !alnum spacing
+KW_WHEN         <- "when"         !alnum spacing
+KW_OTHERS       <- "others"       !alnum spacing
+KW_LOOP         <- "loop"         !alnum spacing
+KW_FOR          <- "for"          !alnum spacing
+KW_FUNCTION     <- "function"     !alnum spacing
+KW_IN           <- "in"           !alnum spacing
+KW_OUT          <- "out"          !alnum spacing
+KW_INOUT        <- "inout"        !alnum spacing
+KW_TO           <- "to"           !alnum spacing
+KW_DOWNTO       <- "downto"       !alnum spacing
+KW_NULL         <- "null"         !alnum spacing
+KW_WAIT         <- "wait"         !alnum spacing
+KW_EXIT         <- "exit"         !alnum spacing
+KW_NEXT         <- "next"         !alnum spacing
+KW_RETURN       <- "return"       !alnum spacing
+KW_TYPE         <- "type"         !alnum spacing
+KW_ARRAY        <- "array"        !alnum spacing
+KW_SUBTYPE      <- "subtype"      !alnum spacing
+KW_RANGE        <- "range"        !alnum spacing
+KW_RECORD       <- "record"       !alnum spacing
+KW_MAP          <- "map"          !alnum spacing
+KW_COMPONENT    <- "component"    !alnum spacing
+KW_LIBRARY      <- "library"      !alnum spacing
+KW_USE          <- "use"          !alnum spacing
+KW_ALL          <- "all"          !alnum spacing
+KW_PACKAGE      <- "package"     !alnum spacing
+KW_WITH         <- "with"         !alnum spacing
+KW_SELECT       <- "select"       !alnum spacing
+KW_GENERATE     <- "generate"     !alnum spacing
+KW_BODY         <- "body"         !alnum spacing
+KW_BUFFER       <- "buffer"       !alnum spacing
+KW_LINKAGE      <- "linkage"      !alnum spacing
+KW_OPEN         <- "open"         !alnum spacing
+KW_ON           <- "on"            !alnum spacing
+KW_UNTIL        <- "until"         !alnum spacing
+KW_ASSERT       <- "assert"       !alnum spacing
+KW_REPORT       <- "report"       !alnum spacing
+KW_SEVERITY     <- "severity"     !alnum spacing
+KW_AFTER        <- "after"        !alnum spacing
+KW_ALIAS        <- "alias"        !alnum spacing
+KW_FILE         <- "file"         !alnum spacing
+KW_GROUP        <- "group"        !alnum spacing
+KW_ATTRIBUTE    <- "attribute"    !alnum spacing
+
+# Type keywords
+KW_STD_LOGIC        <- "std_logic"        !alnum spacing
+KW_STD_LOGIC_VECTOR <- "std_logic_vector" !alnum spacing
+KW_INTEGER          <- "integer"          !alnum spacing
+KW_BOOLEAN          <- "boolean"          !alnum spacing
+KW_BIT              <- "bit"              !alnum spacing
+KW_BIT_VECTOR       <- "bit_vector"       !alnum spacing
+KW_NATURAL          <- "natural"          !alnum spacing
+KW_POSITIVE         <- "positive"         !alnum spacing
+KW_SIGNED           <- "signed"           !alnum spacing
+KW_UNSIGNED         <- "unsigned"         !alnum spacing
+KW_CHARACTER        <- "character"        !alnum spacing
+KW_REAL             <- "real"             !alnum spacing
+
+# Logical expression operators
+KW_AND  <- "and"  !alnum spacing
+KW_OR   <- "or"   !alnum spacing
+KW_XOR  <- "xor"  !alnum spacing
+KW_NAND <- "nand" !alnum spacing
+KW_NOR  <- "nor"  !alnum spacing
+KW_XNOR <- "xnor" !alnum spacing
+KW_NOT  <- "not"  !alnum spacing
+
+# Shift operators
+KW_SLL <- "sll"  !alnum spacing
+KW_SRL <- "srl"  !alnum spacing
+KW_SLA <- "sla"  !alnum spacing
+KW_SRA <- "sra"  !alnum spacing
+KW_ROL <- "rol"  !alnum spacing
+KW_ROR <- "ror"  !alnum spacing
+
+# Other expression operators
+KW_ABS   <- "abs"   !alnum spacing
+KW_MOD   <- "mod"   !alnum spacing
+KW_REM   <- "rem"   !alnum spacing
+KW_TRUE  <- "true"  !alnum spacing
+KW_FALSE <- "false" !alnum spacing
+
+# Identifier (case-preserving, but input is lowercased — preserved in source)
+ID_OR_KW <- < [a-zA-Z][a-zA-Z0-9_]* > spacing
+
+# Literals
+NUMBER    <- < ( digit+ '#' [0-9a-fA-F_]+ '#' / digit+ ) > spacing
+BIT_STRING <- < [UBXOubxo]? '"' [0-9a-fA-F_]+ '"' > spacing
+CHAR      <- "'" < . > "'" spacing
+STRING    <- '"' < ( !'"' . )* > '"' spacing
+
+# Punctuation
+LPAREN <- '(' spacing
+RPAREN <- ')' spacing
+SEMI   <- ';' spacing
+COLON  <- ':' spacing
+COMMA  <- ',' spacing
+DOT    <- '.' spacing
+ARROW  <- "=>" spacing
+ID     <- ID_OR_KW
+
+# Operators
+ASSIGN <- ":=" spacing
+LE     <- "<=" spacing
+GE     <- ">=" spacing
+NEQ    <- "/=" spacing
+EQ     <- '=' !'>' spacing
+LT     <- '<' !( '=' / '>' ) spacing
+GT     <- '>' !( '=' ) spacing
+PLUS   <- '+' spacing
+MINUS  <- '-' spacing
+STAR   <- '*' spacing
+SLASH  <- '/' spacing
+POW    <- "**" spacing
+AND    <- '&' spacing
+BAR    <- '|' spacing
+
+# Comments and whitespace
+spacing        <- ( [ \t\r\n] / line_comment )*
+line_comment   <- "--" ( !'\n' . )*
+alnum          <- [a-zA-Z0-9_]
+digit          <- [0-9]

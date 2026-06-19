@@ -1,0 +1,11 @@
+[project]
+name = "qiming-python"
+version = "0.1.0"
+requires-python = ">=3.11"
+description = "Qiming Simulator Python client for regression automation"
+
+[project.scripts]
+qiming = "qiming.__init__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

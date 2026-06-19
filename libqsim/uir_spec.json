@@ -1,0 +1,101 @@
+{
+  "version": "1.0.0",
+  "description": "UIR (Unified Intermediate Representation) specification for Qiming simulator",
+  "node_types": {
+    "design_unit": {
+      "kind_id": 1,
+      "fields": [
+        {"name": "name", "type": "string", "description": "Module/entity name"},
+        {"name": "language", "type": "string", "values": ["verilog", "vhdl"]},
+        {"name": "ports", "type": "array", "of": "port"},
+        {"name": "signals", "type": "array", "of": "signal"},
+        {"name": "processes", "type": "array", "of": "process"},
+        {"name": "assigns", "type": "array", "of": "assign"},
+        {"name": "instances", "type": "array", "of": "instance"}
+      ]
+    },
+    "port": {
+      "kind_id": 2,
+      "fields": [
+        {"name": "name", "type": "string"},
+        {"name": "direction", "type": "string", "values": ["input", "output", "inout"]},
+        {"name": "width", "type": "uint32"},
+        {"name": "msb", "type": "uint32"},
+        {"name": "lsb", "type": "uint32"},
+        {"name": "is_vector", "type": "bool"}
+      ]
+    },
+    "signal": {
+      "kind_id": 3,
+      "fields": [
+        {"name": "name", "type": "string"},
+        {"name": "sig_type", "type": "string", "values": ["wire", "reg", "vhdl_signal", "vhdl_variable"]},
+        {"name": "width", "type": "uint32"},
+        {"name": "init_value", "type": "string"}
+      ]
+    },
+    "process": {
+      "kind_id": 4,
+      "fields": [
+        {"name": "name", "type": "string", "optional": true},
+        {"name": "kind", "type": "string", "values": ["always", "initial", "vhdl_process"]},
+        {"name": "sensitivity_list", "type": "array", "of": "sensitivity_item"}
+      ]
+    },
+    "sensitivity_item": {
+      "fields": [
+        {"name": "signal_name", "type": "string"},
+        {"name": "edge", "type": "int32", "description": "-1=negedge, 0=level, 1=posedge"}
+      ]
+    },
+    "assign": {
+      "kind_id": 5,
+      "fields": [
+        {"name": "delay", "type": "uint32"}
+      ]
+    },
+    "literal": {
+      "kind_id": 8,
+      "fields": [
+        {"name": "value", "type": "string"},
+        {"name": "width", "type": "uint32"},
+        {"name": "is_signed", "type": "bool"}
+      ]
+    },
+    "instance": {
+      "kind_id": 14,
+      "fields": [
+        {"name": "instance_name", "type": "string"},
+        {"name": "module_name", "type": "string"},
+        {"name": "connections", "type": "array", "of": "port_connection"}
+      ]
+    },
+    "port_connection": {
+      "fields": [
+        {"name": "formal_name", "type": "string"},
+        {"name": "actual_name", "type": "string"}
+      ]
+    },
+    "block": {
+      "kind_id": 13,
+      "fields": [
+        {"name": "is_sequential", "type": "bool"},
+        {"name": "statements", "type": "array", "of": "node_ref"}
+      ]
+    }
+  },
+  "api": {
+    "prefix": "uir_",
+    "functions": [
+      {"name": "create_design_unit", "args": [{"name": "name", "type": "string"}, {"name": "language", "type": "string"}, {"name": "loc", "type": "loc"}], "returns": "ptr:design_unit"},
+      {"name": "add_port", "args": [{"name": "unit", "type": "ptr:design_unit"}, {"name": "name", "type": "string"}, {"name": "direction", "type": "string"}, {"name": "msb", "type": "uint32"}, {"name": "lsb", "type": "uint32"}], "returns": "ptr:port"},
+      {"name": "add_signal", "args": [{"name": "unit", "type": "ptr:design_unit"}, {"name": "name", "type": "string"}, {"name": "type", "type": "string"}, {"name": "width", "type": "uint32"}], "returns": "ptr:signal"},
+      {"name": "add_process", "args": [{"name": "unit", "type": "ptr:design_unit"}, {"name": "kind", "type": "string"}], "returns": "ptr:process"},
+      {"name": "add_assign", "args": [{"name": "unit", "type": "ptr:design_unit"}], "returns": "ptr:assign"},
+      {"name": "add_instance", "args": [{"name": "unit", "type": "ptr:design_unit"}, {"name": "inst_name", "type": "string"}, {"name": "module_name", "type": "string"}], "returns": "ptr:instance"},
+      {"name": "find_signal", "args": [{"name": "unit", "type": "ptr:design_unit"}, {"name": "name", "type": "string"}], "returns": "ptr:node"},
+      {"name": "make_literal", "args": [{"name": "unit", "type": "ptr:design_unit"}, {"name": "value", "type": "string"}, {"name": "loc", "type": "loc"}], "returns": "ptr:literal"},
+      {"name": "to_json", "args": [{"name": "unit", "type": "ptr:design_unit"}], "returns": "string"}
+    ]
+  }
+}

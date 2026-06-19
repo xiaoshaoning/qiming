@@ -1,0 +1,71 @@
+# Build artifacts
+target/
+build/
+dist/
+*.o
+*.so
+*.dylib
+*.dll
+*.lib
+*.a
+*.exe
+
+# Generated junk
+dc_out.c
+*.*.un~
+
+# C
+cmake-build-*/
+CMakeCache.txt
+CMakeFiles/
+
+# Rust
+Cargo.lock
+
+# Node
+node_modules/
+webview/dist/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.*.swp
+.*.swo
+
+# Tauri
+src-tauri/gen/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor backups
+*~
+*.bak
+
+# Claude Code local state
+
+# Debug/scratch
+Testing/
+docs/*.txt
+libqsim/add_diag*.py
+libqsim/asan_repro.c
+libqsim/test_export.fsdb
+example/rv32i/bisect*.py
+
+# Code analysis indexes
+.codegraph/
+example/rv32i/test_parse.c
+src-tauri/*trace_dbg.txt
+
+# RV32M helper (optional, not part of core)
+example/rv32i/apply_rv32m.py
+release
