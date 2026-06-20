@@ -1195,15 +1195,21 @@ uir_node_t *uir_find_signal(uir_design_unit_t *unit, const char *hier_path)
     if (!unit || !hier_path) return NULL;
 
     /* Check ports */
-    for (size_t i = 0; i < unit->port_count; i++) {
-        if (strcmp(unit->ports[i]->name, hier_path) == 0)
-            return (uir_node_t *)unit->ports[i];
+    if (unit->ports) {
+        for (size_t i = 0; i < unit->port_count; i++) {
+            if (unit->ports[i] && unit->ports[i]->name &&
+                strcmp(unit->ports[i]->name, hier_path) == 0)
+                return (uir_node_t *)unit->ports[i];
+        }
     }
 
     /* Check signals */
-    for (size_t i = 0; i < unit->signal_count; i++) {
-        if (strcmp(unit->signals[i]->name, hier_path) == 0)
-            return (uir_node_t *)unit->signals[i];
+    if (unit->signals) {
+        for (size_t i = 0; i < unit->signal_count; i++) {
+            if (unit->signals[i] && unit->signals[i]->name &&
+                strcmp(unit->signals[i]->name, hier_path) == 0)
+                return (uir_node_t *)unit->signals[i];
+        }
     }
 
     /* TODO: handle hierarchical paths with dot notation */

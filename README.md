@@ -1,4 +1,4 @@
-# Qiming
+# Qiming (启明星)
 
 Multi-language HDL simulator supporting Verilog (IEEE 1364-2005) and VHDL (IEEE 1076-2008) with mixed-language simulation via a unified intermediate representation (UIR).
 
@@ -95,4 +95,4 @@ qsim run example/rv32i_vhdl/rv32i_top.vhd example/rv32i/tests/fib.hex 200
 
 ## License
 
-MIT
+[Apache 2.0](LICENSE)
