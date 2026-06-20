@@ -86,6 +86,9 @@ jobs:
       - name: Build qsim binary
         run: cargo build --manifest-path src-tauri/Cargo.toml --bin qsim
 
+      - name: Install Python package
+        run: pip install -e python
+
       - name: Start MCP TCP server and run integration tests
         run: |
           # Start the MCP TCP server in the background
@@ -114,7 +117,7 @@ jobs:
   performance:
     name: Performance
     runs-on: ubuntu-22.04
-    if: github.ref == 'refs/heads/master'
+    if: github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v4
 
