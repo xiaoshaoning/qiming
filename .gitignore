@@ -75,3 +75,4 @@ src-tauri/*trace_dbg.txt
 # RV32M helper (optional, not part of core)
 example/rv32i/apply_rv32m.py
 release
+python/src/*.egg-info/
