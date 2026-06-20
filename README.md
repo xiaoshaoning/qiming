@@ -1,5 +1,7 @@
 # Qiming (启明星)
 
+[![CI](https://github.com/xiaoshaoning/qiming/actions/workflows/ci.yml/badge.svg)](https://github.com/xiaoshaoning/qiming/actions/workflows/ci.yml)
+
 Multi-language HDL simulator supporting Verilog (IEEE 1364-2005) and VHDL (IEEE 1076-2008) with mixed-language simulation via a unified intermediate representation (UIR).
 
 ## Features
