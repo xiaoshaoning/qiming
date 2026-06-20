@@ -28,8 +28,10 @@ static void show(qsim_session_t *s, const char *n) {
 static void build_imem_str32(char *out, const uint32_t *program, size_t count) {
     for (int i = 0; i < IMEM_WORDS; i++) {
         uint32_t val = ((size_t)i < count) ? program[i] : 0x00100073;
-        for (int b = 0; b < 32; b++)
-            out[(i * 32) + b] = ((val >> b) & 1) ? '1' : '0';
+        for (int b = 0; b < 32; b++) {
+            int pos = IMEM_BITS - 1 - (i * 32 + b);
+            out[pos] = ((val >> b) & 1) ? '1' : '0';
+        }
     }
     out[IMEM_BITS] = '\0';
 }
@@ -69,7 +71,8 @@ int main(void) {
     }
 
     /* Load hex program (addi_test.hex: ADDI x10, x0, 42, then EBREAK) */
-    uint32_t program[IMEM_WORDS];
+    uint32_t *program = calloc(IMEM_WORDS, sizeof(uint32_t));
+    if (!program) { fprintf(stderr, "OOM\n"); return 1; }
     const char *hex_paths[] = {"../../example/rv32i/tests/addi_test.hex",
                                 "../example/rv32i/tests/addi_test.hex",
                                 "example/rv32i/tests/addi_test.hex",
@@ -81,11 +84,11 @@ int main(void) {
     }
     printf("Loaded %zu words from addi_test.hex\n", nwords);
 
-    /* Initialize IMEM */
-    char imem_str[IMEM_BITS + 1];
+    /* Initialize IMEM — heap-allocate for large bit vector */
+    char *imem_str = malloc(IMEM_BITS + 1);
+    if (!imem_str) { free(program); fprintf(stderr, "OOM\n"); return 1; }
     build_imem_str32(imem_str, program, nwords);
     int ok = qsim_session_force_str(sess, "imem_port", imem_str);
-    printf("force_str(imem_port) = %d\n", ok);
 
     /* Dump key signals */
     size_t nsig = qsim_session_get_signal_count(sess);
@@ -141,5 +144,7 @@ int main(void) {
     }
 
     qsim_session_free(sess);
+    free(program);
+    free(imem_str);
     return 0;
 }
