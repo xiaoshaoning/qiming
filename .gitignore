@@ -61,6 +61,13 @@ libqsim/asan_repro.c
 libqsim/test_export.fsdb
 example/rv32i/bisect*.py
 
+# Test output artifacts
+*_results*.txt
+*_rel.txt
+*_result.txt
+run_test.bat
+_test_*.txt
+
 # Code analysis indexes
 .codegraph/
 example/rv32i/test_parse.c
