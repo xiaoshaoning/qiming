@@ -19,8 +19,7 @@ cmake-build-*/
 CMakeCache.txt
 CMakeFiles/
 
-# Rust
-Cargo.lock
+# Rust (lockfile tracked for reproducible builds)
 
 # Node
 node_modules/

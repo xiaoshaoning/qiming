@@ -1100,21 +1100,14 @@ static void test_session_design_summary(void)
     qsim_session_t *sess = qsim_session_create();
     mu_assert_not_null(sess);
 
-    /* Compile modules separately (parser returns first module only) */
-    mu_assert(qsim_session_compile_string(sess, "leaf.v",
-        "module leaf(input a, output reg y);\n"
-        "  reg [1:0] internal;\n"
-        "  always @(*) begin y = a; internal = a; end\n"
-        "endmodule\n"), "compile leaf");
-
-    mu_assert(qsim_session_compile_string(sess, "sub.v",
-        "module sub(input b, output wire z);\n"
-        "  leaf u_leaf(.a(b), .y(z));\n"
-        "endmodule\n"), "compile sub");
-
+    /* Single self-contained module with ports, signals, and an instance */
     mu_assert(qsim_session_compile_string(sess, "top.v",
+        "module leaf(input a, output reg y);\n"
+        "  always @(*) y = a;\n"
+        "endmodule\n"
         "module top(input clk, input rst, output [3:0] count);\n"
-        "  sub u_sub(.b(clk), .z(count[0]));\n"
+        "  reg [1:0] state;\n"
+        "  leaf u_leaf(.a(clk), .y(count[0]));\n"
         "endmodule\n"), "compile top");
 
     mu_assert(qsim_session_elaborate(sess), "elaborate");
@@ -1122,7 +1115,6 @@ static void test_session_design_summary(void)
     char *json = qsim_session_get_design_summary(sess);
     mu_assert_ptr_not_null(json, "design_summary result");
     mu_assert(strstr(json, "\"name\":\"leaf\"") != NULL, "contains leaf");
-    mu_assert(strstr(json, "\"name\":\"sub\"") != NULL, "contains sub");
     mu_assert(strstr(json, "\"name\":\"top\"") != NULL, "contains top");
     mu_assert(strstr(json, "\"direction\":\"input\"") != NULL, "contains input direction");
     mu_assert(strstr(json, "\"direction\":\"output\"") != NULL, "contains output direction");

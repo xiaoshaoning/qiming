@@ -1,0 +1,53 @@
+# Auto-detect text files, normalize to LF on commit
+* text=auto
+
+# Source code
+*.c     text eol=lf
+*.h     text eol=lf
+*.rs    text eol=lf
+*.ts    text eol=lf
+*.tsx   text eol=lf
+*.js    text eol=lf
+*.css   text eol=lf
+*.py    text eol=lf
+*.json  text eol=lf
+*.toml  text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+*.md    text eol=lf
+*.tla   text eol=lf
+*.cfg   text eol=lf
+
+# HDL
+*.v     text eol=lf
+*.vh    text eol=lf
+*.sv    text eol=lf
+*.vhd   text eol=lf
+*.vhdl  text eol=lf
+
+# PEG grammars
+*.peg   text eol=lf
+
+# Flex lexer
+*.l     text eol=lf
+
+# Build
+CMakeLists.txt text eol=lf
+
+# Scripts
+*.sh    text eol=lf
+*.bash  text eol=lf
+
+# Binary
+*.png   binary
+*.ico   binary
+*.zip   binary
+*.jar   binary
+*.exe   binary
+*.dll   binary
+*.lib   binary
+*.a     binary
+*.o     binary
+*.obj   binary
+*.pdb   binary
+*.fsdb  binary
