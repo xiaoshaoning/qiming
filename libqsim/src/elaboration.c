@@ -146,10 +146,13 @@ static void bind_ports(uir_design_unit_t *unit, uir_elab_result_t *result) {
 
             /* Find matching formal port */
             int found = 0;
-            for (size_t k = 0; k < target->port_count; k++) {
-                if (strcmp(target->ports[k]->name, conn->formal_name) == 0) {
-                    found = 1;
-                    break;
+            if (target->ports) {
+                for (size_t k = 0; k < target->port_count; k++) {
+                    if (target->ports[k] && target->ports[k]->name &&
+                        strcmp(target->ports[k]->name, conn->formal_name) == 0) {
+                        found = 1;
+                        break;
+                    }
                 }
             }
             if (!found) {
@@ -180,14 +183,20 @@ static void bind_ports(uir_design_unit_t *unit, uir_elab_result_t *result) {
 
 static uir_node_t *find_local(uir_design_unit_t *unit, const char *name) {
     /* Check ports */
-    for (size_t i = 0; i < unit->port_count; i++) {
-        if (strcmp(unit->ports[i]->name, name) == 0)
-            return (uir_node_t *)unit->ports[i];
+    if (unit->ports) {
+        for (size_t i = 0; i < unit->port_count; i++) {
+            if (unit->ports[i] && unit->ports[i]->name &&
+                strcmp(unit->ports[i]->name, name) == 0)
+                return (uir_node_t *)unit->ports[i];
+        }
     }
     /* Check signals */
-    for (size_t i = 0; i < unit->signal_count; i++) {
-        if (strcmp(unit->signals[i]->name, name) == 0)
-            return (uir_node_t *)unit->signals[i];
+    if (unit->signals) {
+        for (size_t i = 0; i < unit->signal_count; i++) {
+            if (unit->signals[i] && unit->signals[i]->name &&
+                strcmp(unit->signals[i]->name, name) == 0)
+                return (uir_node_t *)unit->signals[i];
+        }
     }
     return NULL;
 }
@@ -264,33 +273,41 @@ static void flatten_unit(flat_signal_table_t *t, uir_design_unit_t *unit, const 
     char path[512];
 
     /* Add ports */
-    for (size_t i = 0; i < unit->port_count; i++) {
-        if (prefix[0])
-            snprintf(path, sizeof(path), "%s.%s", prefix, unit->ports[i]->name);
-        else
-            snprintf(path, sizeof(path), "%s", unit->ports[i]->name);
-        flat_add(t, (uir_node_t *)unit->ports[i], path);
+    if (unit->ports) {
+        for (size_t i = 0; i < unit->port_count; i++) {
+            if (!unit->ports[i] || !unit->ports[i]->name) continue;
+            if (prefix[0])
+                snprintf(path, sizeof(path), "%s.%s", prefix, unit->ports[i]->name);
+            else
+                snprintf(path, sizeof(path), "%s", unit->ports[i]->name);
+            flat_add(t, (uir_node_t *)unit->ports[i], path);
+        }
     }
 
     /* Add signals */
-    for (size_t i = 0; i < unit->signal_count; i++) {
-        if (prefix[0])
-            snprintf(path, sizeof(path), "%s.%s", prefix, unit->signals[i]->name);
-        else
-            snprintf(path, sizeof(path), "%s", unit->signals[i]->name);
-        flat_add(t, (uir_node_t *)unit->signals[i], path);
+    if (unit->signals) {
+        for (size_t i = 0; i < unit->signal_count; i++) {
+            if (!unit->signals[i] || !unit->signals[i]->name) continue;
+            if (prefix[0])
+                snprintf(path, sizeof(path), "%s.%s", prefix, unit->signals[i]->name);
+            else
+                snprintf(path, sizeof(path), "%s", unit->signals[i]->name);
+            flat_add(t, (uir_node_t *)unit->signals[i], path);
+        }
     }
 
     /* Recurse into instances */
-    for (size_t i = 0; i < unit->instance_count; i++) {
-        uir_instance_t *inst = unit->instances[i];
-        if (!inst->bound_to) continue;
-        char child_prefix[512];
-        if (prefix[0])
-            snprintf(child_prefix, sizeof(child_prefix), "%s.%s", prefix, inst->instance_name);
-        else
-            snprintf(child_prefix, sizeof(child_prefix), "%s", inst->instance_name);
-        flatten_unit(t, inst->bound_to, child_prefix);
+    if (unit->instances) {
+        for (size_t i = 0; i < unit->instance_count; i++) {
+            uir_instance_t *inst = unit->instances[i];
+            if (!inst || !inst->bound_to) continue;
+            char child_prefix[512];
+            if (prefix[0])
+                snprintf(child_prefix, sizeof(child_prefix), "%s.%s", prefix, inst->instance_name);
+            else
+                snprintf(child_prefix, sizeof(child_prefix), "%s", inst->instance_name);
+            flatten_unit(t, inst->bound_to, child_prefix);
+        }
     }
 }
 

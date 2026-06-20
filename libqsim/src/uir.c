@@ -97,6 +97,7 @@ void uir_destroy_design_unit(uir_design_unit_t *unit)
     if (!unit) return;
     free(unit->name);
     free(unit->language);
+    free(unit->children);  /* children array (child units are freed separately) */
 
     /* Free all nodes in arena (skip index 0 which is the unit itself) */
     for (size_t i = 1; i < unit->node_count; i++) {
@@ -1175,9 +1176,16 @@ void uir_add_fan_out(uir_node_t *node, uir_node_t *load)
 
 void uir_add_child(uir_design_unit_t *parent, uir_design_unit_t *child)
 {
-    (void)parent;
-    (void)child;
-    /* TODO: store child references */
+    if (!parent || !child) return;
+
+    /* Grow the children array */
+    size_t nc = parent->child_count + 1;
+    uir_design_unit_t **nc_arr = realloc(parent->children,
+                                          nc * sizeof(uir_design_unit_t *));
+    if (!nc_arr) return;
+    parent->children = nc_arr;
+    parent->children[parent->child_count] = child;
+    parent->child_count = nc;
 }
 
 /* ── Query API ── */

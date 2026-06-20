@@ -1974,52 +1974,58 @@ char *qsim_session_get_design_summary(qsim_session_t *sess) {
 
         /* Ports */
         SUM_APPEND(",\"port_count\":%zu,\"ports\":[", unit->port_count);
-        size_t first = 1;
-        for (size_t p = 0; p < unit->port_count; p++) {
-            uir_port_t *port = unit->ports[p];
-            if (!port || !port->name) continue;
-            if (!first) SUM_APPEND(",");
-            first = 0;
-            const char *dir = port->direction == UIR_PORT_IN ? "input"
-                            : port->direction == UIR_PORT_OUT ? "output" : "inout";
-            SUM_APPEND("{\"name\":\"%s\",\"direction\":\"%s\",\"width\":%u}",
-                       port->name, dir, port->width);
+        if (unit->ports) {
+            size_t first = 1;
+            for (size_t p = 0; p < unit->port_count; p++) {
+                uir_port_t *port = unit->ports[p];
+                if (!port || !port->name) continue;
+                if (!first) SUM_APPEND(",");
+                first = 0;
+                const char *dir = port->direction == UIR_PORT_IN ? "input"
+                                : port->direction == UIR_PORT_OUT ? "output" : "inout";
+                SUM_APPEND("{\"name\":\"%s\",\"direction\":\"%s\",\"width\":%u}",
+                           port->name, dir, port->width);
+            }
         }
         SUM_APPEND("]");
 
         /* Signals */
         SUM_APPEND(",\"signal_count\":%zu,\"signals\":[", unit->signal_count);
-        first = 1;
-        for (size_t s = 0; s < unit->signal_count; s++) {
-            uir_signal_t *sig = unit->signals[s];
-            if (!sig || !sig->name) continue;
-            if (!first) SUM_APPEND(",");
-            first = 0;
-            const char *stype = sig->sig_type == UIR_SIG_REG ? "reg"
-                              : sig->sig_type == UIR_SIG_VHDL_SIGNAL ? "signal"
-                              : sig->sig_type == UIR_SIG_VHDL_VARIABLE ? "variable"
-                              : "wire";
-            if (sig->array_size > 0)
-                SUM_APPEND("{\"name\":\"%s\",\"type\":\"%s\",\"width\":%u,\"array_size\":%u}",
-                           sig->name, stype, sig->width, sig->array_size);
-            else
-                SUM_APPEND("{\"name\":\"%s\",\"type\":\"%s\",\"width\":%u}",
-                           sig->name, stype, sig->width);
+        if (unit->signals) {
+            size_t first = 1;
+            for (size_t s = 0; s < unit->signal_count; s++) {
+                uir_signal_t *sig = unit->signals[s];
+                if (!sig || !sig->name) continue;
+                if (!first) SUM_APPEND(",");
+                first = 0;
+                const char *stype = sig->sig_type == UIR_SIG_REG ? "reg"
+                                  : sig->sig_type == UIR_SIG_VHDL_SIGNAL ? "signal"
+                                  : sig->sig_type == UIR_SIG_VHDL_VARIABLE ? "variable"
+                                  : "wire";
+                if (sig->array_size > 0)
+                    SUM_APPEND("{\"name\":\"%s\",\"type\":\"%s\",\"width\":%u,\"array_size\":%u}",
+                               sig->name, stype, sig->width, sig->array_size);
+                else
+                    SUM_APPEND("{\"name\":\"%s\",\"type\":\"%s\",\"width\":%u}",
+                               sig->name, stype, sig->width);
+            }
         }
         SUM_APPEND("]");
 
         /* Instances */
         SUM_APPEND(",\"instance_count\":%zu,\"instances\":[", unit->instance_count);
-        first = 1;
-        for (size_t j = 0; j < unit->instance_count; j++) {
-            uir_instance_t *inst = unit->instances[j];
-            if (!inst || !inst->instance_name) continue;
-            if (!first) SUM_APPEND(",");
-            first = 0;
-            SUM_APPEND("{\"name\":\"%s\",\"module_name\":\"%s\",\"port_count\":%zu}",
-                       inst->instance_name,
-                       inst->module_name ? inst->module_name : "",
-                       inst->connection_count);
+        if (unit->instances) {
+            size_t first = 1;
+            for (size_t j = 0; j < unit->instance_count; j++) {
+                uir_instance_t *inst = unit->instances[j];
+                if (!inst || !inst->instance_name) continue;
+                if (!first) SUM_APPEND(",");
+                first = 0;
+                SUM_APPEND("{\"name\":\"%s\",\"module_name\":\"%s\",\"port_count\":%zu}",
+                           inst->instance_name,
+                           inst->module_name ? inst->module_name : "",
+                           inst->connection_count);
+            }
         }
         SUM_APPEND("]");
 
@@ -2039,6 +2045,7 @@ static int is_reg_ref(uir_node_t *node, uir_design_unit_t *unit) {
     if (!node || node->kind != UIR_REF || !unit) return 0;
     uir_ref_t *ref = (uir_ref_t *)node;
     if (!ref->name) return 0;
+    if (!unit->signals) return 0;
     for (size_t i = 0; i < unit->signal_count; i++) {
         uir_signal_t *sig = unit->signals[i];
         if (sig && sig->name && strcmp(sig->name, ref->name) == 0)

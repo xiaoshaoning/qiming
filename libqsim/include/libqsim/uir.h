@@ -849,6 +849,8 @@ struct uir_design_unit {
     uir_package_import_t *imports; /* SystemVerilog package import statements */
     size_t import_count;
     uir_node_t **all_nodes;
+    uir_design_unit_t **children;       /* child units (from elaboration instance binding) */
+    size_t child_count;
     size_t port_count;
     size_t signal_count;
     size_t process_count;
