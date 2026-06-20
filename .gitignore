@@ -76,3 +76,4 @@ src-tauri/*trace_dbg.txt
 example/rv32i/apply_rv32m.py
 release
 python/src/*.egg-info/
+test_export.fsdb
