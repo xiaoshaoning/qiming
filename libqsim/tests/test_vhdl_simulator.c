@@ -2572,7 +2572,7 @@ void register_vhdl_simulator_tests(void)
     mu_run_test(test_vhdl_to_unsigned_sim);
 
     /* 12. Port array dimensions */
-    /* mu_run_test(test_port_array_dimensions); -- TODO: parser: multi-dim port arrays */
+    mu_run_test(test_port_array_dimensions);
 
     /* 13. Multi-dimensional array type */
     /* mu_run_test(test_multi_dim_array_type); -- TODO: parser: multi-dim type tracking */
