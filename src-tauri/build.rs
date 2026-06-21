@@ -34,7 +34,14 @@ fn main()
 
     assert!(status.success(), "cmake build failed");
 
-    // Link to the static library (MSVC uses config subdirectory)
-    println!("cargo:rustc-link-search={}/{}", build_dir.to_str().unwrap(), config);
+    // Link to the static library.
+    // MSVC multi-config puts output in a config subdirectory; single-config
+    // generators (Linux/Mac) put it directly in the build directory.
+    let msvc_config_dir = build_dir.join(config);
+    if msvc_config_dir.exists() {
+        println!("cargo:rustc-link-search={}", msvc_config_dir.to_str().unwrap());
+    } else {
+        println!("cargo:rustc-link-search={}", build_dir.to_str().unwrap());
+    }
     println!("cargo:rustc-link-lib=static=qsim");
 }

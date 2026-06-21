@@ -64,10 +64,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install system deps (Tauri)
+      - name: Install system deps (Tauri + build)
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq \
+            cmake gcc \
             libwebkit2gtk-4.1-dev \
             libappindicator3-dev \
             librsvg2-dev \
