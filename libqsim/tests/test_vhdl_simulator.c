@@ -1434,6 +1434,10 @@ static void test_port_array_dimensions(void)
         "end architecture;\n";
 
     vhdl_parse_result_t r = vhdl_parse("port_array.vhd", src, strlen(src));
+    if (!r.success && r.error_count > 0) {
+        printf("    parse error: %s at %u:%u\n",
+               r.errors[0].message, r.errors[0].line, r.errors[0].column);
+    }
     mu_assert(r.success, "parse port_array");
 
     uir_port_t *data_port = NULL;
