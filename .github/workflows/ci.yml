@@ -143,14 +143,14 @@ jobs:
           ./src-tauri/target/release/qsim bench --save "$RESULT"
 
           if [ ! -f "$BASELINE" ]; then
-            echo "No Linux baseline found — saving current result as baseline."
+            echo "No Linux baseline found -- saving current result as baseline."
             cp "$RESULT" "$BASELINE"
             echo "Commit the new baseline: docs/bench_baseline_linux.json"
           else
-            python3 -c "
-import json
-base = json.load(open('$BASELINE'))
-curr = json.load(open('$RESULT'))
+            python3 - "$RESULT" "$BASELINE" << 'PYEOF'
+import json, sys
+curr = json.load(open(sys.argv[1]))
+base = json.load(open(sys.argv[2]))
 base_steps = float(base['steps_per_sec'])
 curr_steps = float(curr['steps_per_sec'])
 ratio = curr_steps / base_steps
@@ -159,8 +159,6 @@ print(f'Current:  {curr_steps:.0f} steps/sec')
 print(f'Ratio:    {ratio:.3f}')
 if ratio < 0.9:
     print('FAIL: Performance regression >10%')
-    exit(1)
-else:
-    print('PASS: Performance OK')
-"
+    sys.exit(1)
+PYEOF
           fi
