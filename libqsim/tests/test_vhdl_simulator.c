@@ -2579,7 +2579,7 @@ void register_vhdl_simulator_tests(void)
     mu_run_test(test_port_array_dimensions);
 
     /* 13. Multi-dimensional array type */
-    /* mu_run_test(test_multi_dim_array_type); -- TODO: parser: multi-dim type tracking */
+    mu_run_test(test_multi_dim_array_type);
 
     /* 14. Concurrent signal assignment */
     mu_run_test(test_concurrent_assign_constant);
