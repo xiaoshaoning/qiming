@@ -2585,10 +2585,10 @@ void register_vhdl_simulator_tests(void)
     mu_run_test(test_concurrent_assign_constant);
     mu_run_test(test_concurrent_assign_signal_dep);
     mu_run_test(test_concurrent_assign_process_driven);
-    /* mu_run_test(test_concurrent_assign_when_else); -- TODO: concurrent when-else eval */
+    mu_run_test(test_concurrent_assign_when_else);
 
     /* 15. Process(all) auto-sensitivity */
-    /* mu_run_test(test_vhdl_process_all_sim); -- TODO: process(all) auto-sensitivity */
+    mu_run_test(test_vhdl_process_all_sim);
 
     /* 16. With-select (selected signal assignment) */
     mu_run_test(test_with_select_simple);
@@ -2620,7 +2620,7 @@ void register_vhdl_simulator_tests(void)
     mu_run_test(test_vhdl_for_generate_downto_sim);
 
     /* 22. TEXTIO file I/O */
-    /* mu_run_test(test_vhdl_textio_readline_sim); -- TODO: TEXTIO readline path resolution */
+    mu_run_test(test_vhdl_textio_readline_sim);
     mu_run_test(test_vhdl_assert_sim);
     mu_run_test(test_vhdl_report_sim);
     mu_run_test(test_vhdl_alias_sim);
