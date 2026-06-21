@@ -3,9 +3,9 @@ name: Test
 
 on:
   push:
-    branches: [main, vhdl, dev]
+    branches: [main, vhdl]
   pull_request:
-    branches: [main, vhdl, dev]
+    branches: [main, vhdl]
 
 env:
   BUILD_TYPE: Release
