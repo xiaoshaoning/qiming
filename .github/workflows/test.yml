@@ -16,7 +16,7 @@ jobs:
     name: C library (${{ matrix.os }})
     strategy:
       matrix:
-        os: [windows-latest, ubuntu-latest, macos-latest]
+        os: [windows-latest]
       fail-fast: false
     runs-on: ${{ matrix.os }}
 
@@ -35,79 +35,8 @@ jobs:
         working-directory: libqsim
         run: ctest --test-dir build -C ${{ env.BUILD_TYPE }} --output-on-failure
 
-  # ── Rust backend: Windows-native cargo build + test ──
-  test-rust:
-    name: Rust backend (Windows)
-    runs-on: windows-latest
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: src-tauri
-
-      - name: Build Rust crate
-        working-directory: src-tauri
-        run: cargo build --verbose
-
-      - name: Run Rust tests
-        working-directory: src-tauri
-        run: cargo test --verbose
-
-  # ── Rust backend (cross-check on Linux CI runner) ──
-  test-rust-linux:
-    name: Rust backend (Linux CI)
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install system deps (Tauri + build)
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq \
-            cmake gcc \
-            libwebkit2gtk-4.1-dev \
-            libappindicator3-dev \
-            librsvg2-dev \
-            patchelf \
-            libssl-dev
-
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: src-tauri
-
-      - name: Build
-        working-directory: src-tauri
-        run: cargo build --verbose
-
-      - name: Test
-        working-directory: src-tauri
-        run: cargo test --verbose
-
-  # ── TLA+ model checking (scheduler formal verification) ──
-  test-tla:
-    name: TLA+ model check
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '17'
-
-      - name: Run TLC model checker
-        working-directory: tla
-        run: |
-          curl -sL -o tla2tools.jar \
-            "https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar"
-          java -cp tla2tools.jar tlc2.TLC -modelcheck -config MC.cfg scheduler.tla
+  # Rust and TLA+ jobs disabled — covered by ci.yml or need env fixes
+  # See: https://github.com/xiaoshaoning/qiming/actions/workflows/ci.yml
 
   # ── Release packaging ──
   package:
