@@ -7,11 +7,14 @@
 
 /* ================================================================
  * RV32I instruction encoding helpers
+ * (all shifts done on uint32_t: left-shifting signed int into the
+ * sign bit is UB and trips UBSan with -fno-sanitize-recover)
  * ================================================================ */
+#define U32(x) ((uint32_t)(x))
 
 /* R-type: ADD/SUB/SLL/SLT/SLTU/XOR/SRL/SRA/OR/AND */
 #define RV_R_TYPE(funct7, funct3, rd, rs1, rs2) \
-    (((funct7) << 25) | ((rs2) << 20) | ((rs1) << 15) | ((funct3) << 12) | ((rd) << 7) | 0x33)
+    ((U32(funct7) << 25) | (U32(rs2) << 20) | (U32(rs1) << 15) | (U32(funct3) << 12) | (U32(rd) << 7) | 0x33)
 #define RV_ADD(rd, rs1, rs2)  RV_R_TYPE(0x00, 0, rd, rs1, rs2)
 #define RV_SUB(rd, rs1, rs2)  RV_R_TYPE(0x20, 0, rd, rs1, rs2)
 #define RV_SLL(rd, rs1, rs2)  RV_R_TYPE(0x00, 1, rd, rs1, rs2)
@@ -25,7 +28,7 @@
 
 /* I-type: ADDI/SLLI/SLTI/SLTIU/XORI/SRLI/SRAI/ORI/ANDI */
 #define RV_I_TYPE(funct3, rd, rs1, imm12) \
-    ((((imm12) & 0xFFF) << 20) | ((rs1) << 15) | ((funct3) << 12) | ((rd) << 7) | 0x13)
+    (((U32(imm12) & 0xFFF) << 20) | (U32(rs1) << 15) | (U32(funct3) << 12) | (U32(rd) << 7) | 0x13)
 #define RV_ADDI(rd, rs1, imm12)  RV_I_TYPE(0, rd, rs1, imm12)
 #define RV_SLLI(rd, rs1, imm12)  RV_I_TYPE(1, rd, rs1, (imm12) & 0x1F)
 #define RV_SLTI(rd, rs1, imm12)  RV_I_TYPE(2, rd, rs1, imm12)
@@ -39,17 +42,17 @@
 
 /* Load I-type: LB/LH/LW/LBU/LHU */
 #define RV_LOAD(funct3, rd, rs1, imm12) \
-    ((((imm12) & 0xFFF) << 20) | ((rs1) << 15) | ((funct3) << 12) | ((rd) << 7) | 0x03)
+    (((U32(imm12) & 0xFFF) << 20) | (U32(rs1) << 15) | (U32(funct3) << 12) | (U32(rd) << 7) | 0x03)
 #define RV_LW(rd, rs1, imm12)  RV_LOAD(2, rd, rs1, imm12)
 
 /* Store S-type: SB/SH/SW */
 #define RV_STORE(funct3, rs2, rs1, imm12) \
-    (((((imm12) >> 5) & 0x7F) << 25) | ((rs2) << 20) | ((rs1) << 15) | ((funct3) << 12) | (((imm12) & 0x1F) << 7) | 0x23)
+    ((((U32(imm12) >> 5) & 0x7F) << 25) | (U32(rs2) << 20) | (U32(rs1) << 15) | (U32(funct3) << 12) | ((U32(imm12) & 0x1F) << 7) | 0x23)
 #define RV_SW(rs2, rs1, imm12) RV_STORE(2, rs2, rs1, imm12)
 
 /* B-type: BEQ/BNE/BLT/BGE/BLTU/BGEU offset is byte offset from PC */
 static uint32_t enc_btype(uint32_t funct3, uint32_t rs1, uint32_t rs2, int32_t offset) {
-    uint32_t imm13 = offset & 0x1FFF;
+    uint32_t imm13 = (uint32_t)offset & 0x1FFF;
     uint32_t bit12 = (imm13 >> 12) & 1;
     uint32_t bit11 = (imm13 >> 11) & 1;
     uint32_t bits_10_5 = (imm13 >> 5) & 0x3F;
@@ -66,18 +69,18 @@ static uint32_t enc_btype(uint32_t funct3, uint32_t rs1, uint32_t rs2, int32_t o
 
 /* J-type: JAL offset is byte offset from PC */
 static uint32_t enc_jal(uint32_t rd, int32_t offset) {
-    uint32_t imm21 = offset & 0x1FFFFF;
+    uint32_t imm21 = (uint32_t)offset & 0x1FFFFF;
     uint32_t bit20 = (imm21 >> 20) & 1;
     uint32_t bits_19_12 = (imm21 >> 12) & 0xFF;
     uint32_t bit11 = (imm21 >> 11) & 1;
     uint32_t bits_10_1 = (imm21 >> 1) & 0x3FF;
-    return (bit20 << 31) | (bits_10_1 << 21) | (bit11 << 20) | (bits_19_12 << 12) | ((rd) << 7) | 0x6F;
+    return (bit20 << 31) | (bits_10_1 << 21) | (bit11 << 20) | (bits_19_12 << 12) | (U32(rd) << 7) | 0x6F;
 }
 #define RV_JAL(rd, offset) enc_jal(rd, offset)
 
 /* JALR */
 #define RV_JALR(rd, rs1, imm12) \
-    ((((imm12) & 0xFFF) << 20) | ((rs1) << 15) | (0 << 12) | ((rd) << 7) | 0x67)
+    (((U32(imm12) & 0xFFF) << 20) | (U32(rs1) << 15) | (0 << 12) | (U32(rd) << 7) | 0x67)
 
 /* EBREAK */
 #define RV_EBREAK 0x00100073
@@ -89,21 +92,21 @@ static uint32_t enc_jal(uint32_t rd, int32_t offset) {
 #define RV_MRET 0x30200073
 
 /* CSR instructions: CSRRW, CSRRS, CSRRC (register variants) */
-#define RV_CSRRW(rd, rs1, csr)    (((csr)&0xFFF)<<20 | ((rs1)&0x1F)<<15 | 0x001<<12 | ((rd)&0x1F)<<7 | 0x73)
-#define RV_CSRRS(rd, rs1, csr)    (((csr)&0xFFF)<<20 | ((rs1)&0x1F)<<15 | 0x002<<12 | ((rd)&0x1F)<<7 | 0x73)
-#define RV_CSRRC(rd, rs1, csr)    (((csr)&0xFFF)<<20 | ((rs1)&0x1F)<<15 | 0x003<<12 | ((rd)&0x1F)<<7 | 0x73)
+#define RV_CSRRW(rd, rs1, csr)    ((U32(csr)&0xFFF)<<20 | (U32(rs1)&0x1F)<<15 | 0x001<<12 | (U32(rd)&0x1F)<<7 | 0x73)
+#define RV_CSRRS(rd, rs1, csr)    ((U32(csr)&0xFFF)<<20 | (U32(rs1)&0x1F)<<15 | 0x002<<12 | (U32(rd)&0x1F)<<7 | 0x73)
+#define RV_CSRRC(rd, rs1, csr)    ((U32(csr)&0xFFF)<<20 | (U32(rs1)&0x1F)<<15 | 0x003<<12 | (U32(rd)&0x1F)<<7 | 0x73)
 
 /* CSR immediate variants: CSRRWI, CSRRSI, CSRRCI */
-#define RV_CSRRWI(rd, uimm, csr)  (((csr)&0xFFF)<<20 | ((uimm)&0x1F)<<15 | 0x005<<12 | ((rd)&0x1F)<<7 | 0x73)
-#define RV_CSRRSI(rd, uimm, csr)  (((csr)&0xFFF)<<20 | ((uimm)&0x1F)<<15 | 0x006<<12 | ((rd)&0x1F)<<7 | 0x73)
-#define RV_CSRRCI(rd, uimm, csr)  (((csr)&0xFFF)<<20 | ((uimm)&0x1F)<<15 | 0x007<<12 | ((rd)&0x1F)<<7 | 0x73)
+#define RV_CSRRWI(rd, uimm, csr)  ((U32(csr)&0xFFF)<<20 | (U32(uimm)&0x1F)<<15 | 0x005<<12 | (U32(rd)&0x1F)<<7 | 0x73)
+#define RV_CSRRSI(rd, uimm, csr)  ((U32(csr)&0xFFF)<<20 | (U32(uimm)&0x1F)<<15 | 0x006<<12 | (U32(rd)&0x1F)<<7 | 0x73)
+#define RV_CSRRCI(rd, uimm, csr)  ((U32(csr)&0xFFF)<<20 | (U32(uimm)&0x1F)<<15 | 0x007<<12 | (U32(rd)&0x1F)<<7 | 0x73)
 
 /* Timer peripheral address */
 #define TIMER_COMPARE_ADDR 0x20000000
 
 /* LUI / AUIPC */
-#define RV_LUI(rd, imm20)   ((((imm20) & 0xFFFFF) << 12) | ((rd) << 7) | 0x37)
-#define RV_AUIPC(rd, imm20) ((((imm20) & 0xFFFFF) << 12) | ((rd) << 7) | 0x17)
+#define RV_LUI(rd, imm20)   ((U32(imm20) & 0xFFFFF) << 12 | U32(rd) << 7 | 0x37)
+#define RV_AUIPC(rd, imm20) ((U32(imm20) & 0xFFFFF) << 12 | U32(rd) << 7 | 0x17)
 
 /* ================================================================
  * Shared helpers

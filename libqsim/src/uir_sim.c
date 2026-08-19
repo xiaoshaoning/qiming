@@ -381,7 +381,7 @@ qsim_bit_vector_t *uir_u64_to_bv(uint64_t val, uint32_t width) {
     qsim_bit_vector_t *r = qsim_bit_vector_alloc(width);
     if (!r) return NULL;
     for (uint32_t i = 0; i < width; i++)
-        qsim_bit_set(r, i, (val >> i) & 1 ? QSIM_VAL_1 : QSIM_VAL_0);
+        qsim_bit_set(r, i, (i < 64 && ((val >> i) & 1)) ? QSIM_VAL_1 : QSIM_VAL_0);
     return r;
 }
 
@@ -458,35 +458,35 @@ static qsim_bit_vector_t *bv_binary_op(const qsim_bit_vector_t *a,
         case UIR_OP_ADD: {
             uint64_t vr = va + vb;
             for (uint32_t i = 0; i < w; i++)
-                qsim_bit_set(r, i, (vr >> i) & 1 ? QSIM_VAL_1 : QSIM_VAL_0);
+                qsim_bit_set(r, i, (i < 64 && ((vr >> i) & 1)) ? QSIM_VAL_1 : QSIM_VAL_0);
             break;
         }
         case UIR_OP_SUB: {
             if (!a_known || !b_known) { qsim_bit_vector_free(r); return x_bv(w); }
             uint64_t vr = va - vb;
             for (uint32_t i = 0; i < w; i++)
-                qsim_bit_set(r, i, (vr >> i) & 1 ? QSIM_VAL_1 : QSIM_VAL_0);
+                qsim_bit_set(r, i, (i < 64 && ((vr >> i) & 1)) ? QSIM_VAL_1 : QSIM_VAL_0);
             break;
         }
         case UIR_OP_MUL: {
             if (!a_known || !b_known) { qsim_bit_vector_free(r); return x_bv(w); }
             uint64_t vr = va * vb;
             for (uint32_t i = 0; i < w; i++)
-                qsim_bit_set(r, i, (vr >> i) & 1 ? QSIM_VAL_1 : QSIM_VAL_0);
+                qsim_bit_set(r, i, (i < 64 && ((vr >> i) & 1)) ? QSIM_VAL_1 : QSIM_VAL_0);
             break;
         }
         case UIR_OP_DIV: {
             if (!a_known || !b_known) { qsim_bit_vector_free(r); return x_bv(w); }
             uint64_t vr = (vb == 0) ? 0 : (va / vb);
             for (uint32_t i = 0; i < w; i++)
-                qsim_bit_set(r, i, (vr >> i) & 1 ? QSIM_VAL_1 : QSIM_VAL_0);
+                qsim_bit_set(r, i, (i < 64 && ((vr >> i) & 1)) ? QSIM_VAL_1 : QSIM_VAL_0);
             break;
         }
         case UIR_OP_MOD: {
             if (!a_known || !b_known) { qsim_bit_vector_free(r); return x_bv(w); }
             uint64_t vr = (vb == 0) ? 0 : (va % vb);
             for (uint32_t i = 0; i < w; i++)
-                qsim_bit_set(r, i, (vr >> i) & 1 ? QSIM_VAL_1 : QSIM_VAL_0);
+                qsim_bit_set(r, i, (i < 64 && ((vr >> i) & 1)) ? QSIM_VAL_1 : QSIM_VAL_0);
             break;
         }
         case UIR_OP_AND: {
@@ -716,7 +716,7 @@ static qsim_bit_vector_t *bv_unary_op(const qsim_bit_vector_t *a, uir_unary_op_t
             if (!uir_bv_to_u64(a, &va)) { qsim_bit_vector_free(r); return x_bv(w); }
             uint64_t vr = (~va + 1) & ((1ULL << (w < 64 ? w : 64)) - 1);
             for (uint32_t i = 0; i < w; i++)
-                qsim_bit_set(r, i, (vr >> i) & 1 ? QSIM_VAL_1 : QSIM_VAL_0);
+                qsim_bit_set(r, i, (i < 64 && ((vr >> i) & 1)) ? QSIM_VAL_1 : QSIM_VAL_0);
             break;
         }
         case UIR_OP_REDUCE_AND: {
@@ -3474,7 +3474,7 @@ static qsim_bit_vector_t *eval_expr(uir_sim_context_t *ctx, uir_node_t *node) {
                     {
                         qsim_bit_vector_t *r = qsim_bit_vector_alloc(32);
                         if (r) for (uint32_t i = 0; i < 32; i++)
-                            qsim_bit_set(r, i, (result >> i) & 1 ? QSIM_VAL_1 : QSIM_VAL_0);
+                            qsim_bit_set(r, i, (i < 64 && ((result >> i) & 1)) ? QSIM_VAL_1 : QSIM_VAL_0);
                         return r;
                     }
                 }
@@ -3502,7 +3502,7 @@ static qsim_bit_vector_t *eval_expr(uir_sim_context_t *ctx, uir_node_t *node) {
                     uint32_t rv = (uint32_t)((ctx->rand_state >> 16) & 0x7FFFFFFF);
                     qsim_bit_vector_t *r = qsim_bit_vector_alloc(32);
                     if (r) for (uint32_t i = 0; i < 32; i++)
-                        qsim_bit_set(r, i, (rv >> i) & 1 ? QSIM_VAL_1 : QSIM_VAL_0);
+                        qsim_bit_set(r, i, (i < 64 && ((rv >> i) & 1)) ? QSIM_VAL_1 : QSIM_VAL_0);
                     return r;
                 }
                 default:
