@@ -327,6 +327,7 @@ struct uir_sim_context {
     sim_thread_t *workers;          /* [thread_count-1], NULL when not created */
     struct sim_thread_state *threads;  /* [thread_count], per-thread state */
     sim_barrier_t phase_barrier;
+    int barrier_initialized;      /* 1 once sim_barrier_init succeeded (thread pool active) */
     volatile int parallel_phase;  /* set/read via sim_atomic_store/load */
     sim_mutex_t pool_mutex;         /* global event pool fallback mutex */
 
@@ -5826,7 +5827,8 @@ void uir_sim_destroy(uir_sim_context_t *ctx) {
         free(ctx->threads);
     }
     free(ctx->workers);
-    sim_barrier_destroy(&ctx->phase_barrier);
+    if (ctx->barrier_initialized)
+        sim_barrier_destroy(&ctx->phase_barrier);
     sim_mutex_destroy(&ctx->pool_mutex);
 
     /* Free partition arrays */
@@ -7112,6 +7114,7 @@ int uir_sim_run(uir_sim_context_t *ctx, uint64_t duration) {
         ctx->threads = calloc(ctx->thread_count, sizeof(sim_thread_state_t));
         if (ctx->workers && ctx->threads) {
             sim_barrier_init(&ctx->phase_barrier, (unsigned)ctx->thread_count);
+            ctx->barrier_initialized = 1;
             for (int i = 0; i < ctx->thread_count; i++) {
                 ctx->threads[i].id = i;
                 ctx->threads[i].ctx = ctx;

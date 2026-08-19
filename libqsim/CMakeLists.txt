@@ -103,6 +103,8 @@ add_dependencies(qsim gen_vparser gen_vparser_vhdl)
 
 if(NOT WIN32)
     target_link_libraries(qsim PUBLIC Threads::Threads)
+    # math functions (llround etc.) live in libm on Linux/macOS
+    target_link_libraries(qsim PUBLIC m)
 endif()
 
 if(BUILD_TESTING)

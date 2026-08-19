@@ -94,6 +94,9 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
+      - name: Install Linux system deps for tauri (webkit, dbus)
+        run: timeout 600 sudo apt-get update -qq && timeout 600 sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libdbus-1-dev
+
 
       - name: Install Python
         uses: actions/setup-python@v5
@@ -224,6 +227,9 @@ jobs:
     if: github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v4
+      - name: Install Linux system deps for tauri (webkit, dbus)
+        run: timeout 600 sudo apt-get update -qq && timeout 600 sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libdbus-1-dev
+
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
