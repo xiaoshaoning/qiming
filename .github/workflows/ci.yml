@@ -115,7 +115,7 @@ jobs:
       - name: Start MCP TCP server and run integration tests
         run: |
           # Start the MCP TCP server in the background
-          ./src-tauri/target/debug/qsim mcp --tcp 127.0.0.1:9876 &
+          ./target/debug/qsim mcp --tcp 127.0.0.1:9876 &
           MCP_PID=$!
 
           # Wait for server to accept connections (up to 30s)
@@ -241,7 +241,7 @@ jobs:
         run: |
           RESULT="bench_result.json"
           BASELINE="docs/bench_baseline_linux.json"
-          ./src-tauri/target/release/qsim bench --save "$RESULT"
+          ./target/release/qsim bench --save "$RESULT"
 
           if [ ! -f "$BASELINE" ]; then
             echo "No Linux baseline found -- saving current result as baseline."
