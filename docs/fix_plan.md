@@ -274,7 +274,9 @@ exit 1 on >10% regression).
 
 ## P1-6 — CI integrity fixes
 
-> **STATUS: ✅ LANDED (Linux bench baseline pending first CI run)**
+> **STATUS: ✅ LANDED — all 8 CI jobs green (verified on GitHub); Linux bench
+> baseline pending a clean performance run (its apt step is occasionally hit
+> by the transient runner-side apt hang; retries succeed)**
 
 **Problem.**
 - `ci.yml` `rust-tests` job couldn't pass without `webview/dist` (fixed by P0-3).
@@ -315,6 +317,14 @@ exit 1 on >10% regression).
 - **build.rs**: a stale CMakeCache.txt from a different source path (e.g. WSL
   vs Windows) made configure fail; build.rs now wipes the build dir and
   retries once.
+- **TLA job hardening** (post-review CI validation): the jar download step
+  failed on runners, so `tla2tools.jar` v1.7.4 is now vendored at
+  `tla/vendor/` (check.sh uses it when present; download is a fallback), and
+  Java is installed via `actions/setup-java@v4` instead of apt (apt hangs on
+  the runner pool intermittently). TLA+ job now passes.
+- **UBSan findings fixed** (found by the sanitizers job): signed-int shifts
+  into the sign bit in the RV32I test encoders and shift-by-64 in
+  `uir_sim.c` arithmetic — both fixed, sanitizers job deterministic.
 
 **Checklist.**
 - [x] Exactly one source of truth for CI (ci.yml)
