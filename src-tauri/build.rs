@@ -29,18 +29,28 @@ fn main()
 
     let build_dir = libqsim_dir.join("build");
 
-    // Run CMake configure
-    let status = std::process::Command::new("cmake")
-        .args([
-            "-B",
-            build_dir.to_str().unwrap(),
-            "-S",
-            libqsim_dir.to_str().unwrap(),
-            "-DBUILD_TESTING=OFF",
-        ])
-        .status()
-        .expect("failed to run cmake configure");
+    // Run CMake configure. A stale CMakeCache.txt from a different source path
+    // (e.g. one created inside WSL for the same checkout) makes cmake refuse to
+    // reuse the cache; wipe the build dir and retry once in that case.
+    let configure = |build_dir: &std::path::Path| -> std::process::ExitStatus {
+        std::process::Command::new("cmake")
+            .args([
+                "-B",
+                build_dir.to_str().unwrap(),
+                "-S",
+                libqsim_dir.to_str().unwrap(),
+                "-DBUILD_TESTING=OFF",
+            ])
+            .status()
+            .expect("failed to run cmake configure")
+    };
 
+    let mut status = configure(&build_dir);
+    if !status.success() && build_dir.exists() {
+        std::fs::remove_dir_all(&build_dir)
+            .expect("failed to remove stale cmake build dir");
+        status = configure(&build_dir);
+    }
     assert!(status.success(), "cmake configure failed");
 
     // Match C library config to Cargo profile

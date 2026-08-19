@@ -20,7 +20,7 @@ if [ ! -f "$TLA_JAR" ]; then
         echo "Download manually from: $TLA_URL"
         exit 1
     fi
-    if ! java -jar "$TLA_JAR" -version &>/dev/null; then
+    if ! java -cp "$TLA_JAR" tlc2.TLC -version >/dev/null 2>&1; then
         echo "ERROR: downloaded file invalid (network issue?)"
         rm -f "$TLA_JAR"
         exit 1

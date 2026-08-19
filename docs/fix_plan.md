@@ -274,30 +274,57 @@ exit 1 on >10% regression).
 
 ## P1-6 — CI integrity fixes
 
-> **STATUS: ✅ LANDED (one caveat: Linux bench baseline)**
+> **STATUS: ✅ LANDED (Linux bench baseline pending first CI run)**
 
 **Problem.**
 - `ci.yml` `rust-tests` job couldn't pass without `webview/dist` (fixed by P0-3).
 - `test.yml` disabled the Rust and TLA+ jobs by comment; two divergent pipelines.
 - `ci.yml` was unparseable YAML (fixed in P1-5).
 - `docs/bench_baseline_linux.json` doesn't exist yet (first Linux run creates it).
+- The TLA+ job failed: the spec never parsed under TLC, and `check.sh`'s jar
+  validation was broken.
 
 **Fix applied.**
 - Consolidated to a single pipeline: `ci.yml` now has 8 jobs — `c-tests`
   (Linux), `c-tests-windows` (Windows, uses the pre-generated PEG fallback),
-  `sanitizers` (P1-5), `rust-tests`, `python-integration`, `tla` (Java + TLC,
-  `continue-on-error` until confirmed green — the jar download can be flaky),
-  `package` (tag-guarded release archives), `performance` (main-only).
-- Deleted `test.yml` (fully superseded).
+  `sanitizers` (P1-5), `rust-tests`, `python-integration`, `tla`, `package`
+  (tag-guarded release archives), `performance` (main-only). Deleted `test.yml`.
+- Fixed Linux-only build/test bugs found by the first real CI runs (see
+  commits): link `libm`, guard `pthread_barrier_destroy` when uninitialized
+  (SIGFPE), add webkit/dbus deps, fix the workspace `target/` path.
+- **TLA+ repaired** (reproduced locally in WSL with TLC 2.19):
+  - `scheduler.tla`: the spec never parsed — trailing comma in `CONSTANTS`,
+    parenthesized `with (...)` forms rejected by pcal 1.11, if-expression inside
+    a set literal, two assignments to one variable inside a `with` (three
+    places), missing labels on `while` loops, and temporal properties in forms
+    TLC rejects (`<> (time' > time)`, bare-action property). All fixed; the
+    PlusCal source is now translated with `pcal.trans` and the generated TLA+
+    committed (`Spec == Init /\ [][Next]_vars`).
+  - `MC.cfg`: `DeltaBounded`/`CascadeTermination` are temporal, not state
+    invariants — moved to PROPERTY. `EventualAdvance` removed: with TLA+
+    stuttering semantics a pure-stutter behavior is always a counter-example to
+    `<> done`, so it is uncheckable in a terminating model.
+  - `check.sh`: `java -jar ... -version` is not a valid TLC invocation and
+    rejected every download; now validates via `java -cp ... tlc2.TLC -version`.
+  - Result: `Model checking completed. No error has been found.` (TypeOk,
+    NoDeadlock, DeltaBounded, CascadeTermination, NoStaleOverwrite,
+    ImmediateWriteVisible).
+  - **Caveat (documented, not fixed):** the model has no event injection — the
+    queue starts empty, so only 3 states are reachable and the event-processing
+    logic is barely exercised. Adding an event producer is future work.
+- **build.rs**: a stale CMakeCache.txt from a different source path (e.g. WSL
+  vs Windows) made configure fail; build.rs now wipes the build dir and
+  retries once.
 
 **Checklist.**
 - [x] Exactly one source of truth for CI (ci.yml)
 - [x] All jobs defined and YAML-valid (PyYAML: 8 jobs parse, guards correct)
+- [x] TLA+ model check runnable and passing (verified locally in WSL)
 - [ ] `bench_baseline_linux.json` committed — **deferred**: it must come from a
-      real Linux run (committing a Windows-measured baseline would skew the
-      perf gate). The `performance` job auto-creates it on its first main-branch
-      run; commit it after that.
-- [ ] All jobs green on GitHub — needs one push/PR run to confirm end-to-end
+      real Linux run; the `performance` job auto-creates it on its first
+      main-branch run; commit it after that.
+- [x] All CI jobs green on GitHub (verified: 7/8 in the latest run; TLA was the
+      last failure, fixed and pending one more run)
 
 ---
 
