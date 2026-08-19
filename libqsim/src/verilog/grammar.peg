@@ -771,10 +771,9 @@ primary_expr <- LPAREN expr RPAREN
           { _parse_multi_indices[_parse_multi_index_count++] = expr_pop(); } )+
         { if (_parse_unit) do_multi_index_ref(_parse_unit);
           free(_parse_multi_id); _parse_multi_id = NULL; }
-    / ID LBRACKET { _parse_array_id = parse_strdup(yytext); _parse_saved = _parse_array_id; } expr RBRACKET
+    / ID LBRACKET { _parse_array_id = parse_strdup(yytext); } expr RBRACKET
         { uir_node_t *_idx = expr_pop();
-          if (_parse_unit) expr_push(uir_make_ref_index(_parse_unit, _parse_saved, _idx, parse_loc()));
-          free(_parse_saved); _parse_saved = NULL;
+          if (_parse_unit) expr_push(uir_make_ref_index(_parse_unit, _parse_array_id, _idx, parse_loc()));
           free(_parse_array_id); _parse_array_id = NULL; }
     / ID { _parse_func_call_sp = _expr_sp; _parse_func_call_name = parse_strdup(yytext); } LPAREN expr_list RPAREN
         { if (_parse_unit) do_func_call_expr(_parse_unit, _parse_func_call_name); free(_parse_func_call_name); _parse_func_call_name = NULL; }

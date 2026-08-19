@@ -3380,6 +3380,26 @@ static void test_parse_always_latch(void)
  * SystemVerilog interface/modport (SV.2)
  * ================================================================= */
 
+static void test_parse_array_index_expr_double_free(void)
+{
+    /* Regression: the ID[expr] action used to alias _parse_saved and
+     * _parse_array_id and free both, double-freeing whenever the index
+     * expression did not reassign _parse_array_id (e.g. a binary op).
+     * Multiple such refs crashed the heap (0xC0000374 on Windows). */
+    const char *src =
+        "module m(input [31:0] a, b, output reg [31:0] y);\n"
+        "  reg [31:0] mem [0:15];\n"
+        "  always @(*) begin\n"
+        "    y = mem[a & 32'hF] + mem[b & 32'hF];\n"
+        "  end\n"
+        "endmodule\n";
+    parse_result_t r = verilog_parse("arr_index.v", src, strlen(src));
+    mu_assert(r.success, "should parse array refs with expr indices");
+    mu_assert(r.unit != NULL, "should have unit");
+    mu_assert_str_eq(r.unit->name, "m", "module name");
+    uir_destroy_design_unit(r.unit);
+}
+
 static void test_parse_interface_basic(void)
 {
     const char *src =
@@ -3805,6 +3825,7 @@ void register_verilog_parser_tests(void)
     mu_run_test(test_parse_udp_with_initial);
 
     /* SystemVerilog interface/modport (SV.2) */
+    mu_run_test(test_parse_array_index_expr_double_free);
     mu_run_test(test_parse_interface_basic);
     mu_run_test(test_parse_interface_modport);
     mu_run_test(test_parse_interface_in_port);

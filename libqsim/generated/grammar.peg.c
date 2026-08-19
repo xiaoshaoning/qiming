@@ -701,8 +701,7 @@ YY_ACTION(void) yy_23_primary_expr(yycontext *yy, char *yytext, int yyleng)
   {
 #line 0
    uir_node_t *_idx = expr_pop();
-          if (_parse_unit) expr_push(uir_make_ref_index(_parse_unit, _parse_saved, _idx, parse_loc()));
-          free(_parse_saved); _parse_saved = NULL;
+          if (_parse_unit) expr_push(uir_make_ref_index(_parse_unit, _parse_array_id, _idx, parse_loc()));
           free(_parse_array_id); _parse_array_id = NULL; ;
   }
 #undef yythunkpos
@@ -717,7 +716,7 @@ YY_ACTION(void) yy_22_primary_expr(yycontext *yy, char *yytext, int yyleng)
   yyprintf((stderr, "do yy_22_primary_expr\n"));
   {
 #line 0
-   _parse_array_id = parse_strdup(yytext); _parse_saved = _parse_array_id; ;
+   _parse_array_id = parse_strdup(yytext); ;
   }
 #undef yythunkpos
 #undef yypos
