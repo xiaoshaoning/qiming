@@ -4,6 +4,12 @@ project(libqsim C)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
+# Sources are UTF-8 (box-drawing/em-dash comment separators). Tell MSVC to
+# read them as UTF-8 regardless of the system codepage (avoids C4819).
+if(MSVC)
+    add_compile_options(/utf-8)
+endif()
+
 # Increase stack size for PEG recursive-descent parsing of large designs
 if(MSVC)
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /STACK:8388608")

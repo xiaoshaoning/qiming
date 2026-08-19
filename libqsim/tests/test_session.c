@@ -692,8 +692,10 @@ static void test_session_export_fsdb(void)
     qsim_session_step_delta(sess);
 
     const char *fsdb_path = "test_export.fsdb";
+    remove(fsdb_path);  /* clean any stale file from a previous run */
     int ok = qsim_session_export_fsdb(sess, fsdb_path);
     mu_assert(ok, "export fsdb");
+    remove(fsdb_path);  /* don't leave test artifacts in the source tree */
 
     qsim_session_free(sess);
 }
