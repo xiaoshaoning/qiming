@@ -1,5 +1,24 @@
 fn main()
 {
+    // Ensure the webview frontend dist dir exists with a placeholder index.html.
+    // `tauri::generate_context!()` (used by the GUI binary) panics at compile
+    // time when `build.frontendDist` does not exist, which breaks `cargo build`
+    // / `cargo test` on a fresh clone before `npm run build` has been run.
+    // The placeholder is overwritten by the real bundle once webview is built.
+    let webview_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .join("webview");
+    let dist_dir = webview_dir.join("dist");
+    let index = dist_dir.join("index.html");
+    if !index.exists() {
+        std::fs::create_dir_all(&dist_dir)
+            .expect("failed to create webview/dist");
+        std::fs::write(&index, PLACEHOLDER_INDEX)
+            .expect("failed to write placeholder webview/dist/index.html");
+        println!("cargo:warning=webview frontend not built; wrote placeholder webview/dist/index.html");
+    }
+
     tauri_build::build();
 
     // Build libqsim C library via CMake
@@ -45,3 +64,28 @@ fn main()
     }
     println!("cargo:rustc-link-lib=static=qsim");
 }
+
+/// Placeholder page embedded when the webview frontend has not been built yet.
+const PLACEHOLDER_INDEX: &str = r#"<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Qiming Simulator</title>
+  <style>
+    body { font-family: system-ui, sans-serif; background: #111; color: #eee;
+           display: flex; min-height: 100vh; margin: 0; align-items: center; justify-content: center; }
+    main { max-width: 34rem; text-align: center; padding: 2rem; }
+    code { background: #222; padding: 0.1rem 0.4rem; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Qiming Simulator</h1>
+    <p>Frontend not built yet.</p>
+    <p>Run <code>npm install && npm run build</code> in the
+       <code>webview/</code> directory, then rebuild this app
+       (<code>cargo build</code>) to embed the full GUI.</p>
+  </main>
+</body>
+</html>
+"#;
