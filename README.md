@@ -12,7 +12,9 @@ Multi-language HDL simulator supporting Verilog (IEEE 1364-2005) and VHDL (IEEE 
 - **CLI tools** — Compile, simulate, benchmark, and run programs from the command line
 - **Desktop GUI** — Tauri-based app with Monaco editor and Canvas waveform viewer
 - **MCP server** — JSON-RPC interface for AI agent integration
-- **TLA+ verified** — Scheduler formally modeled and model-checked
+- **TLA+ verified** — Reference delta-cycle scheduler formally specified in
+  [tla/scheduler.tla](tla/scheduler.tla) and model-checked with TLC
+  (the product simulator uses its own event engine; see the note in that spec)
 
 ## Quick Start
 
@@ -73,7 +75,8 @@ qiming/
 ├── example/            Example designs
 │   ├── rv32i/          5-stage RV32I CPU (Verilog)
 │   └── rv32i_vhdl/     5-stage RV32I CPU (VHDL)
-├── tla/                TLA+ formal verification of scheduler
+├── tla/                TLA+ reference-scheduler spec + model checker
+│                       (`check.sh` downloads tla2tools.jar and runs TLC; requires Java)
 ├── skills/             MCP skill definitions for AI agents
 └── docs/               Documentation
     └── user_guide.md   Installation, CLI, GUI walkthrough

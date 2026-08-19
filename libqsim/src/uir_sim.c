@@ -1,6 +1,5 @@
 #include "libqsim/uir_sim.h"
 #include "libqsim/elaboration.h"
-#include "libqsim/scheduler.h"
 #include "libqsim/sim_thread.h"
 #include "libqsim/sdf_parse.h"
 #include "libqsim/vhdl_pkg_registry.h"

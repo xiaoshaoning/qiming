@@ -1,3 +1,12 @@
+/* ── Reference delta-cycle scheduler (time wheel + delta queue) ──
+ *
+ * NOTE: this component is a standalone reference implementation, formally
+ * modeled and model-checked in tla/scheduler.tla. It is NOT wired into the
+ * product simulator: uir_sim.c implements its own event engine
+ * (uir_sim_run / sim_event_t). It is exercised only by tests/test_scheduler.c.
+ * Before integrating it into uir_sim.c, note that the scheduler does not
+ * track old signal values (see process_event). */
+
 #include "libqsim/scheduler.h"
 #include <stdlib.h>
 #include <string.h>
@@ -286,7 +295,11 @@ static void process_event(qsim_scheduler_t *sched, qsim_event_node_t *node)
 
     if (sched->callback) {
         qsim_event_t ev = node->event;
-        ev.old_value = node->event.new_value; /* simplified */
+        /* The reference scheduler does not track old signal values; this
+         * field must not be relied upon by consumers. (Copying new_value
+         * here would silently break edge detection if this engine were
+         * wired into the simulator.) */
+        ev.old_value = QSIM_VAL_X;
         sched->callback(&ev, sched->user_data);
     }
 }

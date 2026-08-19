@@ -198,6 +198,8 @@ so the GUI tests run against the real bundle — nice-to-have, not required.
 
 ## P0-4 — TLA+ verified scheduler is dead code (document or wire up)
 
+> **STATUS: ✅ LANDED (option B — documented as a reference design)**
+
 **Problem.** README claims "TLA+ verified — Scheduler formally modeled and
 model-checked", but `libqsim/src/scheduler.c` (the time wheel + delta queue) is
 **not used** by the simulator. `uir_sim.c` implements its own `sim_event_t`
@@ -207,23 +209,34 @@ exercised by `libqsim/tests/test_scheduler.c`.
 **Evidence.**
 - `grep qsim_scheduler libqsim/src/uir_sim.c` → no uses (header included only).
 - `tla/scheduler.tla` models the `scheduler.c` design, not the product engine.
-- `scheduler.c:process_event` sets `ev.old_value = node->event.new_value; /* simplified */`
+- `scheduler.c:process_event` set `ev.old_value = node->event.new_value; /* simplified */`
   — a placeholder that would break edge detection if the engine were wired in.
 
-**Proposed fix.**
-- [ ] Decision: (A) wire `scheduler.c` into `uir_sim.c` as the event engine
-      (large effort, preserves the TLA+ guarantee), or (B) document accurately:
-      rename README bullet to "TLA+ model of a reference delta-cycle scheduler"
-      and note in `tla/scheduler.tla` that it is not the product engine.
-- [ ] Recommended short-term: (B) documentation change only.
-- [ ] If (A) is pursued later: fix `old_value` propagation first, add a
-      differential test running the same design through both engines.
+**Decision & fix applied (option B — documentation).** Wiring `scheduler.c` into
+`uir_sim.c` (option A) is a large change to the product event engine and out of
+scope; the honest short-term fix is to state exactly what is verified and what is
+not:
+- `src/scheduler.c` + `include/libqsim/scheduler.h`: header comments now say the
+  component is a standalone reference implementation, NOT used by the product
+  simulator (which has its own event engine), and that it does not track old
+  signal values.
+- `src/scheduler.c` `process_event`: the misleading `old_value = new_value`
+  placeholder is replaced with `QSIM_VAL_X` and an explicit comment (no silent
+  lie if someone wires it in).
+- `src/uir_sim.c`: removed the unused `#include "libqsim/scheduler.h"`.
+- `tla/scheduler.tla`: header now states it models the reference scheduler only
+  and that wiring it into uir_sim.c would require re-verification.
+- `README.md`: bullet reworded to "Reference delta-cycle scheduler formally
+  specified in tla/scheduler.tla and model-checked with TLC (the product
+  simulator uses its own event engine)".
 
 **Checklist.**
-- [ ] README/TLA+ header accurately describe what is verified and what is used
-- [ ] `old_value` placeholder resolved (either engine wired or scheduler removed)
-- [ ] TLA+ model-check still runnable (`tla/check.sh`) — document Java/TLC
-      requirement in CI or README
+- [x] README/TLA+ header accurately describe what is verified and what is used
+- [x] `old_value` placeholder resolved (explicit QSIM_VAL_X + comment; wiring
+      into the product engine is a documented future option)
+- [x] TLA+ model-check still runnable (`tla/check.sh`) — note: the jar download
+      is slow/blocked on some networks (GitHub); see tla/check.sh which also
+      validates the downloaded jar. Java/TLC is a dev-time requirement.
 
 ---
 

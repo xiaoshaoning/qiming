@@ -1,6 +1,14 @@
 ---- MODULE scheduler ----
 (*
-  TLA+ specification of the Qiming delta-cycle scheduler.
+  TLA+ specification of the Qiming delta-cycle scheduler
+  (libqsim/src/scheduler.c).
+
+  IMPORTANT: this models the standalone REFERENCE scheduler only. The
+  product simulator does NOT use scheduler.c — uir_sim.c implements its
+  own event engine (sim_event_t queue, uir_sim_run). This spec and the
+  C implementation are kept in sync as a formally verified reference
+  design; wiring scheduler.c into uir_sim.c would require re-verifying
+  the properties below against the real engine.
 
   The scheduler manages simulation events at (time, delta) pairs.
   Events at the same time are stratified by delta cycle.

@@ -1,6 +1,13 @@
 #ifndef LIBDSIM_SCHEDULER_H
 #define LIBDSIM_SCHEDULER_H
 
+/* Reference delta-cycle scheduler API.
+ *
+ * Standalone reference implementation (see src/scheduler.c): formally modeled
+ * in tla/scheduler.tla, exercised by tests/test_scheduler.c. NOT used by the
+ * product simulator — uir_sim.c has its own event engine. The event
+ * callback's old_value field is not populated by this scheduler. */
+
 #include "libqsim/value.h"
 #include <stddef.h>
 #include <stdint.h>
