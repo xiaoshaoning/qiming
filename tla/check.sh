@@ -1,6 +1,7 @@
 #!/bin/bash
-# Setup TLA+ model checker for the Qiming scheduler.
-set -e
+# Setup TLA+ model checker for the Qiming scheduler reference model.
+# Requires Java. Downloads tla2tools.jar from GitHub releases if not present.
+set -u
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 TLA_JAR="$SCRIPT_DIR/tla2tools.jar"
@@ -9,14 +10,22 @@ TLA_URL="https://github.com/tlaplus/tlaplus/releases/download/$TLA_VERSION/tla2t
 
 if [ ! -f "$TLA_JAR" ]; then
     echo "Downloading TLA+ tools from $TLA_URL ..."
-    if command -v gh &>/dev/null; then
-        gh release download "$TLA_VERSION" --repo tlaplus/tlaplus -p "tla2tools.jar" -D "$SCRIPT_DIR"
-    elif command -v curl &>/dev/null; then
-        curl -sL -o "$TLA_JAR" "$TLA_URL"
-    elif command -v wget &>/dev/null; then
-        wget -q -O "$TLA_JAR" "$TLA_URL"
+    # Prefer curl/wget over gh: gh needs auth and can prompt interactively,
+    # which hangs on CI runners.
+    if command -v curl >/dev/null 2>&1; then
+        if ! curl -fsSL --connect-timeout 30 --max-time 300 -o "$TLA_JAR" "$TLA_URL"; then
+            echo "ERROR: failed to download tla2tools.jar"
+            rm -f "$TLA_JAR"
+            exit 1
+        fi
+    elif command -v wget >/dev/null 2>&1; then
+        if ! wget -q -O "$TLA_JAR" "$TLA_URL"; then
+            echo "ERROR: failed to download tla2tools.jar"
+            rm -f "$TLA_JAR"
+            exit 1
+        fi
     else
-        echo "ERROR: need curl, wget, or gh"
+        echo "ERROR: need curl or wget"
         echo "Download manually from: $TLA_URL"
         exit 1
     fi
@@ -29,5 +38,9 @@ fi
 
 echo "Running TLC model checker..."
 cd "$SCRIPT_DIR"
-java -cp "$TLA_JAR" tlc2.TLC -modelcheck -config MC.cfg scheduler.tla "$@"
-echo "Done."
+java -cp "$TLA_JAR" tlc2.TLC -modelcheck -config MC.cfg scheduler.tla
+status=$?
+if [ $status -ne 0 ]; then
+    echo "ERROR: TLC model check failed with exit code $status"
+fi
+exit $status
