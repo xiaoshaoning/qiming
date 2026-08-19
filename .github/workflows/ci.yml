@@ -13,15 +13,15 @@ jobs:
   # ── C library build + test (fastest feedback) ──
   c-tests:
     name: C tests
-    runs-on: ubuntu-22.04
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
 
       - name: Install C dependencies
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq cmake gcc golang-go
+        run: timeout 600 sudo apt-get update -qq && timeout 600 sudo apt-get install -y -qq cmake gcc golang-go
 
       - name: Install PEG parser generator
-        run: go install github.com/pointlander/peg@v0.1.20
+        run: timeout 300 go install github.com/pointlander/peg@v0.1.20
 
       - name: Add Go bin to PATH
         run: echo "$HOME/go/bin" >> $GITHUB_PATH
@@ -38,7 +38,7 @@ jobs:
   #     peg tool is not present on runners, which also exercises that path) ──
   c-tests-windows:
     name: C tests (Windows)
-    runs-on: windows-latest
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
 
@@ -58,15 +58,15 @@ jobs:
   # Would have caught the P0-1 double-free (heap corruption) before it shipped.
   sanitizers:
     name: Sanitizers (ASan+UBSan)
-    runs-on: ubuntu-22.04
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
 
       - name: Install C dependencies
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq cmake gcc golang-go
+        run: timeout 600 sudo apt-get update -qq && timeout 600 sudo apt-get install -y -qq cmake gcc golang-go
 
       - name: Install PEG parser generator
-        run: go install github.com/pointlander/peg@v0.1.20
+        run: timeout 300 go install github.com/pointlander/peg@v0.1.20
 
       - name: Add Go bin to PATH
         run: echo "$HOME/go/bin" >> $GITHUB_PATH
@@ -85,15 +85,15 @@ jobs:
   # ── Rust build + unit tests ──
   rust-tests:
     name: Rust tests
-    runs-on: ubuntu-22.04
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
 
       - name: Install C dependencies
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq cmake gcc golang-go libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+        run: timeout 600 sudo apt-get update -qq && timeout 600 sudo apt-get install -y -qq cmake gcc golang-go libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
 
       - name: Install PEG parser generator
-        run: go install github.com/pointlander/peg@v0.1.20
+        run: timeout 300 go install github.com/pointlander/peg@v0.1.20
 
       - name: Add Go bin to PATH
         run: echo "$HOME/go/bin" >> $GITHUB_PATH
@@ -110,15 +110,15 @@ jobs:
   # ── Python integration tests against MCP TCP server ──
   python-integration:
     name: Python integration tests
-    runs-on: ubuntu-22.04
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
 
       - name: Install C dependencies + netcat
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq cmake gcc golang-go netcat-openbsd
+        run: timeout 600 sudo apt-get update -qq && timeout 600 sudo apt-get install -y -qq cmake gcc golang-go netcat-openbsd
 
       - name: Install PEG parser generator
-        run: go install github.com/pointlander/peg@v0.1.20
+        run: timeout 300 go install github.com/pointlander/peg@v0.1.20
 
       - name: Add Go bin to PATH
         run: echo "$HOME/go/bin" >> $GITHUB_PATH
@@ -167,13 +167,13 @@ jobs:
   # required check once it has gone green a few times.
   tla:
     name: TLA+ model check
-    runs-on: ubuntu-22.04
+    timeout-minutes: 40
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
 
       - name: Install Java
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq default-jre-headless
+        run: timeout 600 sudo apt-get update -qq && timeout 600 sudo apt-get install -y -qq default-jre-headless
 
       - name: Run TLC model check
         run: bash tla/check.sh
@@ -182,6 +182,7 @@ jobs:
   package:
     name: Package (${{ matrix.os }})
     if: startsWith(github.ref, 'refs/tags/v')
+    timeout-minutes: 30
     strategy:
       matrix:
         os: [windows-latest, ubuntu-latest]
@@ -245,16 +246,16 @@ jobs:
   # ── Performance benchmark (main branch only) ──
   performance:
     name: Performance
-    runs-on: ubuntu-22.04
+    timeout-minutes: 40
     if: github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v4
 
       - name: Install C dependencies
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq cmake gcc golang-go
+        run: timeout 600 sudo apt-get update -qq && timeout 600 sudo apt-get install -y -qq cmake gcc golang-go
 
       - name: Install PEG parser generator
-        run: go install github.com/pointlander/peg@v0.1.20
+        run: timeout 300 go install github.com/pointlander/peg@v0.1.20
 
       - name: Add Go bin to PATH
         run: echo "$HOME/go/bin" >> $GITHUB_PATH
