@@ -148,8 +148,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Java
-        run: timeout 600 sudo apt-get update -qq && timeout 600 sudo apt-get install -y -qq default-jre-headless
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
 
       - name: Run TLC model check
         run: bash tla/check.sh | tee tla/tlc.log; exit ${PIPESTATUS[0]}
