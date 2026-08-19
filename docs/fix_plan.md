@@ -291,55 +291,62 @@ is confusing and the demo looks broken.
 
 ## P2-8 — Encoding portability (C4819)
 
+> **STATUS: ✅ FIXED & LANDED**
+
 **Problem.** MSVC on Chinese-locale Windows (codepage 936) warns C4819 for
 UTF-8 box-drawing / em-dash comment characters in headers and sources
 (`simulator.h:1144`, `scheduler.c:99`, `uir.h:10341`, `session.h:255`,
 `elaboration.c:136`, etc.).
 
-**Proposed fix.**
-- [ ] Add `/utf-8` to MSVC flags in `libqsim/CMakeLists.txt`
-      (`target_compile_options(qsim PUBLIC $<$<C_COMPILER_ID:MSVC>:/utf-8>)`
-      or via `add_compile_options`), or
-- [ ] Replace non-ASCII comment chars with ASCII (`--`, `-`) in the 8 affected files.
+**Fix applied.** Added `add_compile_options(/utf-8)` for MSVC in
+`libqsim/CMakeLists.txt` (all 50 affected files are valid UTF-8; GCC/Clang
+already default to UTF-8). Rebuild shows **zero C4819 warnings**; C suite 606/606.
 
 **Checklist.**
-- [ ] Clean MSVC build log (no C4819)
-- [ ] Same behavior on GCC/Clang (unchanged)
+- [x] Clean MSVC build log (no C4819)
+- [x] Same behavior on GCC/Clang (unchanged)
 
 ---
 
 ## P2-9 — Repo hygiene
 
-**Problem.** Untracked scratch files in the repo root: `test_export.fsdb`
-(67-byte binary), `.README.md.un~` (Vim undo file).
+> **STATUS: ✅ FIXED & LANDED**
 
-**Proposed fix.**
-- [ ] Delete both files from the working tree (they are untracked; nothing to
-      `git rm`).
-- [ ] Confirm `.gitignore` covers them (add explicit entries if not).
+**Problem.** Untracked scratch files in the repo root: `test_export.fsdb`
+(67-byte binary), `.README.md.un~` (Vim undo file), `_test_textio_in.txt`.
+
+**Fix applied.** All three deleted from the working tree; each was already
+covered by `.gitignore` (`test_export.fsdb`, `*.*.un~`, `_test_*.txt`).
 
 **Checklist.**
-- [ ] `git status` clean after removal
-- [ ] `.gitignore` has explicit entries for `*.fsdb`, `*.*.un~`
+- [x] `git status` clean after removal
+- [x] `.gitignore` has explicit entries for `*.fsdb`, `*.*.un~`
 
 ---
 
 ## P2-10 — Documentation refresh
 
-**Problem.** Stale numbers: `docs/user_guide.md:29-30` say "Rust tests (18)" /
-"C tests (309)"; actual are 23 / 572. `user_guide.md:45` lists "four
-subcommands" but `qsim` now has `elaborate`, `signals`, `run` too. README
-feature list overstates mixed-language guarantees and the TLA+ claim (see P0-4).
+> **STATUS: ✅ FIXED & LANDED**
 
-**Proposed fix.**
-- [ ] Update test counts and CLI subcommand list in `docs/user_guide.md`
-- [ ] Update README Quick Start with the fresh-clone build order
-      (`webview` build note) once P0-3 lands
-- [ ] Soften/make accurate: "mixed-language simulation" scope and TLA+ claim
+**Problem.** Stale numbers: `docs/user_guide.md:29-30` say "Rust tests (18)" /
+"C tests (309)"; actual are 26 / 606. `user_guide.md:45` lists "four
+subcommands" but `qsim` now has `elaborate`, `signals`, `run` too.
+
+**Fix applied.**
+- `docs/user_guide.md`: test counts → 26 / 606; full subcommand list
+  (`compile`, `simulate`, `elaborate`, `signals`, `run`, `bench`, `mcp`) with
+  `run` and `elaborate`/`signals` sections; removed stale CUnit/
+  `dsim_*` troubleshooting rows.
+- `README.md`: note that the GUI frontend is optional — a placeholder page is
+  embedded until `npm run build` in `webview/` (post-P0-3).
 
 **Checklist.**
-- [ ] `user_guide.md` numbers match CI reality
-- [ ] README commands all verified end-to-end before publishing
+- [x] `user_guide.md` numbers match CI reality
+- [x] README commands all verified end-to-end before publishing
+
+---
+
+## Remaining work (P0-4, P1-5, P1-6, P1-7)
 
 ---
 

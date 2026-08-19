@@ -26,8 +26,8 @@ npm run build
 cd ..
 
 # Run tests
-cargo test                 # Rust tests (18)
-cd libqsim && ctest --test-dir build   # C tests (309)
+cargo test                 # Rust tests (26)
+cd libqsim && ctest --test-dir build   # C tests (606)
 ```
 
 ### Desktop App (Tauri)
@@ -42,7 +42,8 @@ cargo tauri dev
 
 ## CLI Usage
 
-The `qsim` binary provides four subcommands: `compile`, `simulate`, `bench`, and `mcp`.
+The `qsim` binary provides these subcommands: `compile`, `simulate`, `elaborate`,
+`signals`, `run`, `bench`, and `mcp`.
 
 ### compile
 
@@ -65,6 +66,22 @@ qsim simulate counter.v 100       # 100 delta steps
 ```
 
 After each step all signal values are printed. Final wave entry count is displayed.
+
+### run
+
+Load a hex program into a CPU design and run it for a number of cycles, printing
+the PC and register trace until halt (or the cycle limit).
+
+```bash
+qsim run example/rv32i/rv32i_top.v example/rv32i/tests/fib.hex 200
+qsim run example/rv32i_vhdl/rv32i_top.vhd example/rv32i/tests/fib.hex 200
+```
+
+Example output ends with:
+```
+HALTED after 81 cycles
+Wave entries: 7563
+```
 
 ### bench
 
@@ -98,6 +115,16 @@ Start the MCP (Model Context Protocol) server for AI agent integration.
 ```bash
 qsim mcp                          # STDIO mode (for Claude Code integration)
 qsim mcp --tcp 0.0.0.0:9876       # TCP mode (for remote agents)
+```
+
+### elaborate / signals
+
+`elaborate` compiles and elaborates the design (binding instances); `signals`
+additionally lists all elaborated signals with their current values.
+
+```bash
+qsim elaborate top.v
+qsim signals top.v
 ```
 
 ## GUI Usage
@@ -167,6 +194,6 @@ qsim simulate counter.v 20
 |---------|-------------|----------|
 | `compile failed` | Syntax error in source | Check diagnostics output |
 | `elaboration failed` | Unresolved module reference | Verify module/entity names match |
-| `dsim_session_create` returns null | C library not initialized | Ensure `dsim_init()` called before session create |
-| C tests fail to build | Missing CUnit | `apt install libcunit1-dev` or `brew install cunit` |
+| `qsim_session_create` returns null | C library not initialized | Ensure `qsim_init()` called before session create |
+| `force <signal> failed` | Signal not found | Check hierarchical path and that the design is elaborated |
 | Tauri build fails | Missing system dependencies | See [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) |

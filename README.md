@@ -34,6 +34,11 @@ cd libqsim && cmake -B build && cmake --build build && ctest --test-dir build
 cargo test
 ```
 
+> **GUI frontend is optional.** Until `npm run build` has been run in `webview/`,
+> `cargo build` embeds a placeholder page so the app still compiles and the CLI
+> works; the full Monaco/waveform GUI appears once the frontend is built and the
+> app is rebuilt.
+
 ### CLI Usage
 
 ```bash
