@@ -3454,6 +3454,7 @@ static void test_vhdl_textio_readline_sim(void)
 
     uir_sim_destroy(sim);
     uir_destroy_design_unit(r.unit);
+    remove("_test_textio_in.txt");  /* don't leave test artifacts in the source tree */
 }
 
 /* =================================================================
