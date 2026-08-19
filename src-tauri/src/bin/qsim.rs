@@ -249,30 +249,33 @@ fn cmd_signals(args: &[String]) -> Result<(), String> {
 
 // ── CPU runner ──
 
-/// Convert a u16 value to an LSB-first bit string of the given width.
-fn bv(value: u64, width: u32) -> String {
-    let mut s = String::with_capacity(width as usize);
-    for i in 0..width {
-        s.push(if (value >> i) & 1 == 1 { '1' } else { '0' });
-    }
-    s
-}
-
-/// Load a hex file (one 4-digit hex value per line) into a 4096-bit imem string.
+/// Load a hex file (one 8-digit 32-bit hex value per line) into the 32768-bit
+/// (1024 x 32) imem bit string, MSB-first. Unused slots are filled with EBREAK.
 fn load_hex(path: &str) -> Result<String, String> {
+    const IMEM_WORDS: usize = 1024;
+    const IMEM_BITS: usize = IMEM_WORDS * 32;
+    const EBREAK: u32 = 0x0010_0073;
+
     let content = fs::read_to_string(path)
         .map_err(|e| format!("cannot read '{}': {}", path, e))?;
-    let mut s = String::with_capacity(4096);
+    let mut program: Vec<u32> = Vec::new();
     for line in content.lines() {
         let line = line.trim();
-        if line.is_empty() { continue; }
-        let val = u16::from_str_radix(line.trim_start_matches("0x"), 16)
+        if line.is_empty() || line.starts_with('#') { continue; }
+        let val = u32::from_str_radix(line.trim_start_matches("0x"), 16)
             .map_err(|e| format!("bad hex '{}': {}", line, e))?;
-        s.push_str(&bv(val as u64, 16));
+        program.push(val);
     }
-    // Pad unused locations with HALT (0xF000)
-    while s.len() < 4096 {
-        s.push_str(&bv(0xF000u64, 16));
+
+    // Build MSB-first bit string: word i occupies bits [i*32+31 : i*32],
+    // overall bit 0 = LSB of word 0 → last char of the string.
+    let mut s = String::with_capacity(IMEM_BITS);
+    for i in (0..IMEM_WORDS).rev() {
+        let val = program.get(i).copied().unwrap_or(EBREAK);
+        // Emit bits 31..0 (MSB-first within each word).
+        for b in (0..32).rev() {
+            s.push(if (val >> b) & 1 == 1 { '1' } else { '0' });
+        }
     }
     Ok(s)
 }
@@ -308,13 +311,16 @@ fn cmd_run(args: &[String]) -> Result<(), String> {
         .map_err(|e| format!("elaboration failed: {}", e))?;
     println!("Elaborate OK");
 
-    // Load program and force onto imem
+    // Load program and force onto imem (Verilog: "imem", VHDL: "imem_port")
     let program = load_hex(hex_file)?;
     println!("Program loaded: {}", hex_file);
 
-    session.force_str("imem", &program)
-        .map_err(|e| format!("force imem failed: {}", e))?;
-    println!("IMEM forced");
+    let imem_sig = ["imem", "imem_port"]
+        .iter()
+        .find(|sig| session.force_str(sig, &program).is_ok())
+        .copied()
+        .ok_or_else(|| "force imem failed: no imem/imem_port signal found".to_string())?;
+    println!("IMEM forced ({}), {} bits", imem_sig, program.len());
 
     // Reset: force rst=1, clk=0, init_en=0 then step 2 deltas
     session.force_str("rst", "1").ok();
@@ -337,8 +343,8 @@ fn cmd_run(args: &[String]) -> Result<(), String> {
     };
 
     // Header
-    println!("{:>4}  {:>5}  {:>16}  {:>8}  {:>8}  {:>8}  {:>8}  {:>8}  {:>8}  {:>8}",
-             "cycle", "halted", "pc", "x1", "x2", "x3", "x4", "x5", "x6", "x7");
+    println!("{:>4}  {:>5}  {:>16}  {:>10}  {:>10}",
+             "cycle", "halted", "pc", "x1", "x10");
 
     let mut halted = false;
     for cycle in 0..max_cycles {
@@ -348,29 +354,19 @@ fn cmd_run(args: &[String]) -> Result<(), String> {
         session.force_str("clk", "1").ok();
         session.step_delta().ok();
 
-        // Read signals
+        // Read signals (design exposes reg_x1 and reg_x10)
         let h = eval(&session, "halted");
         let pc = eval(&session, "pc");
         let x1 = eval(&session, "reg_x1");
-        let x2 = eval(&session, "reg_x2");
-        let x3 = eval(&session, "reg_x3");
-        let x4 = eval(&session, "reg_x4");
-        let x5 = eval(&session, "reg_x5");
-        let x6 = eval(&session, "reg_x6");
-        let x7 = eval(&session, "reg_x7");
+        let x10 = eval(&session, "reg_x10");
 
         // Convert binary strings to hex display
         let pc_hex = bin_to_hex(&pc);
         let x1_hex = bin_to_hex(&x1);
-        let x2_hex = bin_to_hex(&x2);
-        let x3_hex = bin_to_hex(&x3);
-        let x4_hex = bin_to_hex(&x4);
-        let x5_hex = bin_to_hex(&x5);
-        let x6_hex = bin_to_hex(&x6);
-        let x7_hex = bin_to_hex(&x7);
+        let x10_hex = bin_to_hex(&x10);
 
-        println!("{:>4}  {:>5}  {:>16}  {:>8}  {:>8}  {:>8}  {:>8}  {:>8}  {:>8}  {:>8}",
-                 cycle, h, pc_hex, x1_hex, x2_hex, x3_hex, x4_hex, x5_hex, x6_hex, x7_hex);
+        println!("{:>4}  {:>5}  {:>16}  {:>10}  {:>10}",
+                 cycle, h, pc_hex, x1_hex, x10_hex);
 
         if h == "1" {
             halted = true;
@@ -575,4 +571,54 @@ fn cmd_mcp(args: &[String]) -> Result<(), String> {
 
     qiming_lib::ffi::shutdown();
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::load_hex;
+
+    /// Extract word `i` (0-based) from the 32768-bit MSB-first imem string.
+    /// Word i bit b lives at string char index 32767 - (i*32 + b).
+    fn word_at(s: &str, i: usize) -> u32 {
+        let base = 32767 - i * 32;
+        let mut val: u32 = 0;
+        for b in 0..32 {
+            if s.as_bytes()[base - b] == b'1' {
+                val |= 1 << b;
+            }
+        }
+        val
+    }
+
+    #[test]
+    fn load_hex_layout_and_padding() {
+        let path = std::env::temp_dir().join("qsim_load_hex_test.hex");
+        std::fs::write(&path, "10001137\n# comment\n0x00C000EF\n\n").unwrap();
+        let s = load_hex(path.to_str().unwrap()).unwrap();
+        assert_eq!(s.len(), 32768, "full 1024x32 imem string");
+        assert_eq!(word_at(&s, 0), 0x1000_1137, "word 0");
+        assert_eq!(word_at(&s, 1), 0x00C0_00EF, "word 1 (0x prefix + comment skip)");
+        // Beyond the program: padded with EBREAK.
+        assert_eq!(word_at(&s, 2), 0x0010_0073, "pad word 2 with EBREAK");
+        assert_eq!(word_at(&s, 1023), 0x0010_0073, "pad last word with EBREAK");
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn load_hex_rejects_bad_lines() {
+        let path = std::env::temp_dir().join("qsim_load_hex_bad.hex");
+        std::fs::write(&path, "10001137\nZZZZ\n").unwrap();
+        assert!(load_hex(path.to_str().unwrap()).is_err(), "bad hex must error");
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn load_hex_empty_program_pads_fully() {
+        let path = std::env::temp_dir().join("qsim_load_hex_empty.hex");
+        std::fs::write(&path, "# only a comment\n").unwrap();
+        let s = load_hex(path.to_str().unwrap()).unwrap();
+        assert_eq!(s.len(), 32768);
+        assert_eq!(word_at(&s, 0), 0x0010_0073, "EBREAK everywhere");
+        std::fs::remove_file(&path).ok();
+    }
 }
