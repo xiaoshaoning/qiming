@@ -14,6 +14,7 @@ jobs:
   c-tests:
     name: C tests
     timeout-minutes: 40
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
 
@@ -39,6 +40,7 @@ jobs:
   c-tests-windows:
     name: C tests (Windows)
     timeout-minutes: 40
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -59,6 +61,7 @@ jobs:
   sanitizers:
     name: Sanitizers (ASan+UBSan)
     timeout-minutes: 40
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
 
@@ -86,6 +89,7 @@ jobs:
   rust-tests:
     name: Rust tests
     timeout-minutes: 40
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
 
@@ -111,6 +115,7 @@ jobs:
   python-integration:
     name: Python integration tests
     timeout-minutes: 40
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
 
@@ -168,6 +173,7 @@ jobs:
   tla:
     name: TLA+ model check
     timeout-minutes: 40
+    runs-on: ubuntu-22.04
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
@@ -247,6 +253,7 @@ jobs:
   performance:
     name: Performance
     timeout-minutes: 40
+    runs-on: ubuntu-22.04
     if: github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v4
