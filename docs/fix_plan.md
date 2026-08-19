@@ -274,44 +274,56 @@ exit 1 on >10% regression).
 
 ## P1-6 — CI integrity fixes
 
-**Problem.**
-- `ci.yml` `rust-tests` job can't pass (see P0-3).
-- `test.yml` disables the Rust and TLA+ jobs by comment; performance job in
-  `ci.yml` was recently fixed for YAML syntax but references
-  `docs/bench_baseline_linux.json`, which does not exist yet
-  (first run saves it; subsequent runs compare against it).
-- Only `docs/bench_baseline.json` (Windows) exists.
+> **STATUS: ✅ LANDED (one caveat: Linux bench baseline)**
 
-**Proposed fix.**
-- [ ] Re-enable Rust job in `test.yml` (or keep single `ci.yml` and delete
-      `test.yml` to avoid two divergent pipelines).
-- [ ] Commit an initial `docs/bench_baseline_linux.json` after one clean Linux
-      run so the perf gate is active immediately.
-- [ ] Add TLA+ check to CI (`tla/check.sh`) in a `tla` job (Java + TLC).
+**Problem.**
+- `ci.yml` `rust-tests` job couldn't pass without `webview/dist` (fixed by P0-3).
+- `test.yml` disabled the Rust and TLA+ jobs by comment; two divergent pipelines.
+- `ci.yml` was unparseable YAML (fixed in P1-5).
+- `docs/bench_baseline_linux.json` doesn't exist yet (first Linux run creates it).
+
+**Fix applied.**
+- Consolidated to a single pipeline: `ci.yml` now has 8 jobs — `c-tests`
+  (Linux), `c-tests-windows` (Windows, uses the pre-generated PEG fallback),
+  `sanitizers` (P1-5), `rust-tests`, `python-integration`, `tla` (Java + TLC,
+  `continue-on-error` until confirmed green — the jar download can be flaky),
+  `package` (tag-guarded release archives), `performance` (main-only).
+- Deleted `test.yml` (fully superseded).
 
 **Checklist.**
-- [ ] Exactly one source of truth for CI (either ci.yml or test.yml)
-- [ ] All CI jobs green on a fresh PR: c-tests, rust-tests, python-integration,
-      performance, sanitizers, (tla)
-- [ ] `bench_baseline_linux.json` committed
+- [x] Exactly one source of truth for CI (ci.yml)
+- [x] All jobs defined and YAML-valid (PyYAML: 8 jobs parse, guards correct)
+- [ ] `bench_baseline_linux.json` committed — **deferred**: it must come from a
+      real Linux run (committing a Windows-measured baseline would skew the
+      perf gate). The `performance` job auto-creates it on its first main-branch
+      run; commit it after that.
+- [ ] All jobs green on GitHub — needs one push/PR run to confirm end-to-end
 
 ---
 
 ## P1-7 — `qsim simulate` UX: X values and empty waveform
 
+> **STATUS: ✅ LANDED**
+
 **Problem.** `qsim simulate counter.v 10` prints `clk = X`, `count = XXXX`,
 `Wave entries: 0`. Without stimulus the simulator has nothing to do; the output
 is confusing and the demo looks broken.
 
-**Proposed fix.**
-- [ ] Document expected behavior in `docs/user_guide.md` (simulate steps the
-      design with no stimulus; use `run` for the CPU demos).
-- [ ] Optional: add a `--clock <signal>`/`--period` option that auto-drives a
-      clock during `simulate` (small, high-visibility UX win).
+**Fix applied.**
+- `qsim simulate` now accepts `--clock [signal]` (defaults to `clk`): the clock
+  is force-toggled each delta step (rising edge every two steps), producing
+  real wave entries and letting counters/FSMs advance (registers still start as
+  `X` per 4-value semantics — pair with an `initial` assignment in the design).
+- Without `--clock`, a hint is printed: "no stimulus is applied — use
+  `--clock <signal>` to auto-drive a clock".
+- `docs/user_guide.md`: simulate section documents `--clock` and the X-init
+  semantics; the counter example now uses `initial count = 0` + `--clock`.
+- CLI usage line updated.
 
 **Checklist.**
-- [ ] User guide explains `simulate` semantics
-- [ ] (Optional) `qsim simulate --clock clk 10` produces non-X values and waves
+- [x] User guide explains `simulate` semantics
+- [x] `qsim simulate counter.v 9 --clock` produces non-X values and wave entries
+      (verified: count 1,2,3,...; wave entries = steps)
 
 ---
 

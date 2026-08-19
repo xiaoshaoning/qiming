@@ -45,7 +45,7 @@ fn print_usage() {
     eprintln!("  qsim compile <files...>            Compile design files (Verilog/VHDL)");
     eprintln!("  qsim elaborate <files...>          Compile and elaborate design files");
     eprintln!("  qsim signals <files...>            Compile, elaborate, list all signals");
-    eprintln!("  qsim simulate <files...> [steps]   Compile and simulate (optional step count)");
+    eprintln!("  qsim simulate <files...> [steps] [--clock [signal]]   Compile and simulate (optional step count / clock drive)");
     eprintln!("  qsim run <design_file> <hex_file> [cycles] Load program and run CPU");
     eprintln!("  qsim bench [--save FILE]           Run performance benchmark");
     eprintln!("  qsim mcp                           Start MCP server on stdin/stdout");
@@ -93,13 +93,34 @@ fn cmd_simulate(args: &[String]) -> Result<(), String> {
         return Err("missing file argument".to_string());
     }
 
-    // Last argument may be a step count; filter it out.
-    let (files, steps): (Vec<&String>, u64) = match args.last() {
-        Some(last) if last.parse::<u64>().is_ok() && args.len() > 1 => {
-            (args[..args.len() - 1].iter().collect(), last.parse().unwrap())
+    // Arguments: files... [steps] [--clock [name]]
+    let mut files: Vec<&String> = Vec::new();
+    let mut steps: u64 = 10;
+    let mut clock: Option<String> = None;
+    let mut i = 0;
+    while i < args.len() {
+        let a = &args[i];
+        if a == "--clock" {
+            // Optional signal name; defaults to "clk".
+            if i + 1 < args.len() && !args[i + 1].starts_with("--") && args[i + 1].parse::<u64>().is_err() {
+                clock = Some(args[i + 1].clone());
+                i += 2;
+            } else {
+                clock = Some("clk".to_string());
+                i += 1;
+            }
+        } else if let Ok(n) = a.parse::<u64>() {
+            steps = n;
+            i += 1;
+        } else {
+            files.push(a);
+            i += 1;
         }
-        _ => (args.iter().collect(), 10),
-    };
+    }
+
+    if files.is_empty() {
+        return Err("missing file argument".to_string());
+    }
 
     qiming_lib::ffi::init();
 
@@ -130,8 +151,20 @@ fn cmd_simulate(args: &[String]) -> Result<(), String> {
         }
     }
 
+    if let Some(clk) = &clock {
+        println!("Auto-driving clock '{}' (toggle each delta step; posedge every 2 steps)", clk);
+    } else {
+        println!("Note: no stimulus is applied -- signals will stay at their initial values.");
+        println!("      Use --clock <signal> to auto-drive a clock during simulation.");
+    }
+
     println!("Simulating for {} delta steps...", steps);
     for step in 0..steps {
+        // Drive the clock before each step (odd steps high, even steps low),
+        // producing a rising edge every two steps.
+        if let Some(clk) = &clock {
+            session.force_str(clk, if step % 2 == 0 { "1" } else { "0" }).ok();
+        }
         match session.step_delta() {
             Ok(()) => {
                 println!("  Step {}: signals updated", step + 1);

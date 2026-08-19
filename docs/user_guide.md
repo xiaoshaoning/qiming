@@ -63,9 +63,27 @@ Compile, elaborate, and simulate a design for a configurable number of delta ste
 ```bash
 qsim simulate counter.v           # 10 delta steps (default)
 qsim simulate counter.v 100       # 100 delta steps
+qsim simulate counter.v 20 --clock        # auto-drive clock signal "clk"
+qsim simulate counter.v 20 --clock sys_clk   # auto-drive a differently-named clock
 ```
 
-After each step all signal values are printed. Final wave entry count is displayed.
+After each step all signal values are printed and the final wave entry count is
+displayed. By default **no stimulus is applied** — signals stay at their initial
+values (and registers start as `X`, per 4-value logic semantics). Use
+`--clock <signal>` (defaults to `clk`) to auto-toggle a clock during
+simulation (rising edge every two steps); pair it with an `initial` assignment
+in the design to see counters/FSMs actually advance, e.g.:
+
+```verilog
+module counter(input clk, output reg [3:0] count);
+  initial count = 0;
+  always @(posedge clk) count <= count + 4'b1;
+endmodule
+```
+
+```bash
+qsim simulate counter.v 9 --clock
+```
 
 ### run
 
@@ -174,6 +192,7 @@ The GUI is organized as a multi-panel layout:
 Create `counter.v`:
 ```verilog
 module counter(input clk, output reg [3:0] count);
+  initial count = 0;
   always @(posedge clk) begin
     count <= count + 4'b1;
   end
@@ -184,8 +203,8 @@ endmodule
 # Compile
 qsim compile counter.v
 
-# Simulate for 20 delta steps
-qsim simulate counter.v 20
+# Simulate for 9 delta steps, auto-driving the clock
+qsim simulate counter.v 9 --clock
 ```
 
 ## Troubleshooting
