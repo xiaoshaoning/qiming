@@ -194,7 +194,9 @@ jobs:
       - name: Prepare package
         shell: bash
         run: |
-          mkdir -p release/qiming-${{ runner.os }}
+          mkdir -p release/qiming-${{ runner.os }}/include
+          mkdir -p release/qiming-${{ runner.os }}/lib
+          mkdir -p release/qiming-${{ runner.os }}/bin
           # Headers
           cp -r libqsim/include/libqsim release/qiming-${{ runner.os }}/include/
           # Library
