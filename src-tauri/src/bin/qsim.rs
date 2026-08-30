@@ -171,7 +171,11 @@ fn cmd_simulate(args: &[String]) -> Result<(), String> {
         // (the testbench is expected to generate its own clocks).
         println!("Simulating until time {}...", until);
         let elapsed = session.step_time(until);
-        println!("Advanced {} time units; final state:", elapsed);
+        if session.is_finished() {
+            println!("Stopped by $finish/$stop after {} time units", elapsed);
+        } else {
+            println!("Advanced {} time units; final state:", elapsed);
+        }
         for i in 0..sig_count {
             if let Some(sig_name) = session.signal_name(i) {
                 if let Ok(val) = session.eval_str(&sig_name) {
@@ -202,6 +206,10 @@ fn cmd_simulate(args: &[String]) -> Result<(), String> {
                     println!("  Step {}: done ({})", step + 1, e);
                     break;
                 }
+            }
+            if session.is_finished() {
+                println!("  $finish/$stop reached — stopping");
+                break;
             }
         }
     }

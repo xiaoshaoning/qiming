@@ -89,6 +89,11 @@ impl Session {
         unsafe { ffi::qsim_session_step_time(self.ptr, time_fs) }
     }
 
+    /// True when the simulation stopped itself via `$finish`/`$stop`.
+    pub fn is_finished(&self) -> bool {
+        unsafe { ffi::qsim_session_is_finished(self.ptr) != 0 || ffi::qsim_session_is_stopped(self.ptr) != 0 }
+    }
+
     /// Get the total number of events processed during simulation.
     pub fn event_count(&self) -> usize {
         unsafe { ffi::qsim_session_get_event_count(self.ptr) }

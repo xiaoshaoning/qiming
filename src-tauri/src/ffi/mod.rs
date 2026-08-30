@@ -156,6 +156,8 @@ extern "C" {
     pub fn qsim_session_elaborate(sess: *mut std::ffi::c_void) -> i32;
     pub fn qsim_session_step_delta(sess: *mut std::ffi::c_void) -> i32;
     pub fn qsim_session_step_time(sess: *mut std::ffi::c_void, time_fs: u64) -> u64;
+    pub fn qsim_session_is_finished(sess: *mut std::ffi::c_void) -> i32;
+    pub fn qsim_session_is_stopped(sess: *mut std::ffi::c_void) -> i32;
     pub fn qsim_session_get_event_count(sess: *mut std::ffi::c_void) -> usize;
     pub fn qsim_session_get_signal_count(sess: *mut std::ffi::c_void) -> i32;
     pub fn qsim_session_get_signal_name(
