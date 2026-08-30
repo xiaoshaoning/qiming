@@ -267,6 +267,44 @@ int main(void) {
         qsim_session_free(sess);
     }
 
+    /* $display format flags: %0d (minimal), %5d (space-pad), %05d
+     * (zero-pad), %02x (zero-pad hex, %x alias). */
+    printf("\n=== Display format flags ===\n");
+    {
+        const char *src =
+        "module bug_fmt;\n"
+        "  integer v;\n"
+        "  initial begin\n"
+        "    v = 42;\n"
+        "    $display(\"0d=[%0d]\", v);\n"
+        "    $display(\"5d=[%5d]\", v);\n"
+        "    $display(\"05d=[%05d]\", v);\n"
+        "    $display(\"02x=[%02x]\", 8'h5);\n"
+        "  end\n"
+        "endmodule\n";
+
+        qsim_session_t *sess = qsim_session_create();
+        int ok = qsim_session_compile_string(sess, "bug_fmt.v", src);
+        if (!ok) { printf("  PARSE FAILED\n"); tests++; }
+        else {
+            ok = qsim_session_elaborate(sess);
+            if (!ok) { printf("  ELAB FAILED\n"); tests++; }
+            else {
+                qsim_session_step_delta(sess);
+                const char *log = qsim_session_get_log(sess);
+                const char *want[] = {"0d=[42]", "5d=[   42]", "05d=[00042]", "02x=[05]"};
+                int all_ok = 1;
+                for (size_t i = 0; i < 4; i++) {
+                    int found = log && strstr(log, want[i]) != NULL;
+                    printf("  %s: %s\n", want[i], found ? "OK" : "FAIL");
+                    if (!found) all_ok = 0;
+                }
+                check("format flags", all_ok ? "ok" : "bad", "ok");
+            }
+        }
+        qsim_session_free(sess);
+    }
+
     printf("\n%d/%d passed\n", passed, tests);
     return passed == tests ? 0 : 1;
 }

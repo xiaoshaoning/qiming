@@ -4580,6 +4580,21 @@ static char *sys_format_output(uir_sim_context_t *ctx, const char *fmt,
                 out[pos++] = '%';
                 continue;
             }
+            /* %[flags][width]conv — Verilog flags: '-' left-justify, '0'
+             * zero-pad. '%0d' (zero flag, no width) means minimal width,
+             * which is the default here, so it needs no special handling. */
+            int left_just = 0, zero_flag = 0;
+            while (*p == '-' || *p == '0' || *p == '+' || *p == ' ' || *p == '#') {
+                if (*p == '-') left_just = 1;
+                else if (*p == '0') zero_flag = 1;
+                p++;
+            }
+            size_t w_width = 0;
+            while (*p >= '0' && *p <= '9') {
+                w_width = w_width * 10 + (size_t)(*p - '0');
+                p++;
+            }
+            if (!*p) break;
             if (ai >= arg_count) {
                 pos += snprintf(out + pos, cap - pos, "%%%c", *p);
                 continue;
@@ -4596,6 +4611,7 @@ static char *sys_format_output(uir_sim_context_t *ctx, const char *fmt,
                         { has_x = 1; break; }
             }
 
+            size_t w_start = pos;
             switch (*p) {
                 case 'd': case 'D':
                     if (has_x)
@@ -4604,6 +4620,7 @@ static char *sys_format_output(uir_sim_context_t *ctx, const char *fmt,
                         pos += snprintf(out + pos, cap - pos, "%llu", (unsigned long long)val);
                     break;
                 case 'h': case 'H':
+                case 'x': case 'X':  /* %x is a common hex alias */
                     if (has_x)
                         pos += snprintf(out + pos, cap - pos, "x");
                     else
@@ -4649,6 +4666,22 @@ static char *sys_format_output(uir_sim_context_t *ctx, const char *fmt,
                 default:
                     pos += snprintf(out + pos, cap - pos, "%%%c", *p);
                     break;
+            }
+            /* Apply field width: right-justify (space or '0' fill) unless
+             * '-' was given. %0d has width 0, so it is unaffected. */
+            {
+                size_t w_len = pos - w_start;
+                if (w_width > w_len && pos + (w_width - w_len) < cap) {
+                    size_t pad = w_width - w_len;
+                    if (left_just) {
+                        for (size_t i = 0; i < pad; i++) out[pos++] = ' ';
+                    } else {
+                        memmove(out + w_start + pad, out + w_start, w_len);
+                        for (size_t i = 0; i < pad; i++)
+                            out[w_start + i] = zero_flag ? '0' : ' ';
+                        pos += pad;
+                    }
+                }
             }
             qsim_bit_vector_free(bv);
         } else {
