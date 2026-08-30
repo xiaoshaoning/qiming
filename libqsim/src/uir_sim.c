@@ -24,6 +24,7 @@ static __thread int tls_pid = -1;
 #define LOOP_SYNC_BUDGET 256
 #include <string.h>
 #include <stdio.h>
+#include <math.h>
 /* Note: platform atomics used instead of <stdatomic.h> for MSVC compat.
  * sim_atomic_load/store wrappers are provided via sim_thread.h. */
 #ifdef _MSC_VER
@@ -852,6 +853,11 @@ static int add_signal(uir_sim_context_t *ctx, uir_node_t *node, const char *name
         if (sig->array_size > 0) width *= sig->array_size;
         s->is_signed = sig->is_signed;
         init_state = sig->init_value.state;
+        if (sig->sig_type == UIR_SIG_REAL) {
+            /* Real signals default to 0.0 (all-zero IEEE bits), not X. */
+            width = 64;
+            init_state = QSIM_0;
+        }
     } else if (node->kind == UIR_PORT) {
         uir_port_t *p = (uir_port_t *)node;
         width = p->width;
@@ -1272,6 +1278,93 @@ static void schedule_event(uir_sim_context_t *ctx, uint64_t time, uint32_t delta
                             uint32_t sig_idx, qsim_bit_vector_t *value, int is_nba,
                             int ps_lo, int ps_hi);
 static qsim_bit_vector_t *eval_expr(uir_sim_context_t *ctx, uir_node_t *node);
+
+
+
+
+/* ── Real (IEEE-754 double) helpers ── */
+
+static double bv_to_double(const qsim_bit_vector_t *bv) {
+    uint64_t bits = 0;
+    if (bv) {
+        for (uint32_t i = 0; i < bv->width && i < 64; i++)
+            if (qsim_bit_get(bv, i).state == QSIM_1) bits |= (1ULL << i);
+    }
+    double d = 0.0;
+    memcpy(&d, &bits, sizeof(d));
+    return d;
+}
+
+static qsim_bit_vector_t *double_to_bv(double d) {
+    uint64_t bits = 0;
+    memcpy(&bits, &d, sizeof(bits));
+    qsim_bit_vector_t *r = qsim_bit_vector_alloc(64);
+    if (r) for (uint32_t i = 0; i < 64; i++)
+        qsim_bit_set(r, i, ((bits >> i) & 1ULL) ? QSIM_VAL_1 : QSIM_VAL_0);
+    return r;
+}
+
+
+/* Does this expression produce a real value? (ref -> signal type, literal
+ * flag, known real sys funcs, propagates through unary/binary/cond). */
+static int expr_is_real(uir_sim_context_t *ctx, uir_node_t *node) {
+    if (!node) return 0;
+    switch (node->kind) {
+    case UIR_LITERAL:
+        return ((uir_literal_t *)node)->is_real;
+    case UIR_REF: {
+        uir_ref_t *ref = (uir_ref_t *)node;
+        int idx = -1;
+        if (tls_prefix[0]) {
+            char prefixed[520];
+            snprintf(prefixed, sizeof(prefixed), "%s.%s", tls_prefix, ref->name);
+            idx = find_signal_idx(ctx, prefixed);
+        }
+        if (idx < 0) idx = find_signal_idx(ctx, ref->name);
+        if (idx >= 0 && ctx->signals[idx].node &&
+            ctx->signals[idx].node->kind == UIR_SIGNAL)
+            return ((uir_signal_t *)ctx->signals[idx].node)->sig_type == UIR_SIG_REAL;
+        /* Parameters: check the param value node */
+        if (idx < 0 && ref->name) {
+            for (size_t ui = 0; ui < ctx->unit_count; ui++) {
+                uir_design_unit_t *u = ctx->units[ui];
+                for (size_t pi = 0; pi < u->param_count; pi++) {
+                    if (u->params[pi].hier_path &&
+                        strcmp(u->params[pi].hier_path, ref->name) == 0)
+                        return expr_is_real(ctx, u->params[pi].value);
+                }
+            }
+        }
+        return 0;
+    }
+    case UIR_SYS_FUNC_EXPR: {
+        uir_sys_func_kind_t k = ((uir_sys_func_expr_t *)node)->func_kind;
+        return k == UIR_SYS_FUNC_BITSTOREAL || k == UIR_SYS_FUNC_REALTOBITS ||
+               k == UIR_SYS_FUNC_SQRT || k == UIR_SYS_FUNC_FLOOR ||
+               k == UIR_SYS_FUNC_CEIL || k == UIR_SYS_FUNC_ITOR;
+    }
+    case UIR_EXPR_BINARY:
+        return expr_is_real(ctx, ((uir_expr_t *)node)->operand_a) ||
+               expr_is_real(ctx, ((uir_expr_t *)node)->operand_b);
+    case UIR_EXPR_UNARY:
+        return expr_is_real(ctx, ((uir_expr_t *)node)->operand_a);
+    case UIR_COND:
+        return expr_is_real(ctx, ((uir_cond_t *)node)->then_expr) ||
+               expr_is_real(ctx, ((uir_cond_t *)node)->else_expr);
+    default:
+        return 0;
+    }
+}
+/* Value as double: real-typed values are IEEE bits; integers convert. */
+static double arg_to_double(uir_sim_context_t *ctx, uir_node_t *node,
+                            const qsim_bit_vector_t *v) {
+    if (expr_is_real(ctx, node)) return bv_to_double(v);
+    int64_t iv = 0;
+    for (uint32_t i = 0; i < v->width && i < 64; i++)
+        if (qsim_bit_get(v, i).state == QSIM_1) iv |= (1ULL << i);
+    return (double)iv;
+}
+
 static void exec_stmt(uir_sim_context_t *ctx, uir_node_t *stmt);
 
 /* Forward declarations for TEXTIO (TEXTIO functions are defined later) */
@@ -3341,6 +3434,41 @@ static qsim_bit_vector_t *eval_expr(uir_sim_context_t *ctx, uir_node_t *node) {
                 if (b) qsim_bit_vector_free(b);
                 return qsim_bit_vector_from_state(1, QSIM_X);
             }
+            /* Real arithmetic: IEEE-754 double math when either operand is
+             * real (signals, literals, sys funcs propagate the type). */
+            if (expr_is_real(ctx, expr->operand_a) ||
+                expr_is_real(ctx, expr->operand_b)) {
+                double da = bv_to_double(a);
+                double db = bv_to_double(b);
+                double dr = 0.0;
+                qsim_bit_vector_t *r = NULL;
+                switch (expr->op.bin_op) {
+                    case UIR_OP_ADD: dr = da + db; break;
+                    case UIR_OP_SUB: dr = da - db; break;
+                    case UIR_OP_MUL: dr = da * db; break;
+                    case UIR_OP_DIV: dr = db != 0.0 ? da / db : 0.0; break;
+                    case UIR_OP_LT:  dr = da <  db ? 1.0 : 0.0; break;
+                    case UIR_OP_GT:  dr = da >  db ? 1.0 : 0.0; break;
+                    case UIR_OP_LE:  dr = da <= db ? 1.0 : 0.0; break;
+                    case UIR_OP_GE:  dr = da >= db ? 1.0 : 0.0; break;
+                    case UIR_OP_EQ:  dr = da == db ? 1.0 : 0.0; break;
+                    case UIR_OP_NEQ: dr = da != db ? 1.0 : 0.0; break;
+                    case UIR_OP_MOD: dr = db != 0.0 ? fmod(da, db) : 0.0; break;
+                    default: dr = 0.0; break;
+                }
+                if (expr->op.bin_op == UIR_OP_LT || expr->op.bin_op == UIR_OP_GT ||
+                    expr->op.bin_op == UIR_OP_LE || expr->op.bin_op == UIR_OP_GE ||
+                    expr->op.bin_op == UIR_OP_EQ || expr->op.bin_op == UIR_OP_NEQ) {
+                    /* comparison: 1-bit result */
+                    r = qsim_bit_vector_alloc(1);
+                    if (r) qsim_bit_set(r, 0, dr != 0.0 ? QSIM_VAL_1 : QSIM_VAL_0);
+                } else {
+                    r = double_to_bv(dr);
+                }
+                qsim_bit_vector_free(a);
+                qsim_bit_vector_free(b);
+                return r;
+            }
             int signed_comp = a_signed || b_signed;
             qsim_bit_vector_t *r = bv_binary_op(a, b, expr->op.bin_op, ctx->current_context_width, signed_comp);
             ctx->current_is_signed = signed_comp;
@@ -3562,6 +3690,52 @@ static qsim_bit_vector_t *eval_expr(uir_sim_context_t *ctx, uir_node_t *node) {
                     if (r) for (uint32_t i = 0; i < 32; i++)
                         qsim_bit_set(r, i, (i < 64 && ((rv >> i) & 1)) ? QSIM_VAL_1 : QSIM_VAL_0);
                     return r;
+                }
+                case UIR_SYS_FUNC_BITSTOREAL:
+                case UIR_SYS_FUNC_REALTOBITS: {
+                    /* bitstoreal: int bits -> double (no data change, type
+                     * flows); realtobits: double -> int bits (same). */
+                    if (sf->arg_count > 0 && sf->args[0])
+                        return eval_expr(ctx, sf->args[0]);
+                    return qsim_bit_vector_from_state(64, QSIM_X);
+                }
+                case UIR_SYS_FUNC_SQRT:
+                case UIR_SYS_FUNC_FLOOR:
+                case UIR_SYS_FUNC_CEIL: {
+                    if (sf->arg_count < 1 || !sf->args[0])
+                        return qsim_bit_vector_from_state(64, QSIM_X);
+                    qsim_bit_vector_t *v = eval_expr(ctx, sf->args[0]);
+                    if (!v) return qsim_bit_vector_from_state(64, QSIM_X);
+                    double d = arg_to_double(ctx, sf->args[0], v);
+                    qsim_bit_vector_free(v);
+                    if (sf->func_kind == UIR_SYS_FUNC_SQRT) d = sqrt(d);
+                    else if (sf->func_kind == UIR_SYS_FUNC_FLOOR) d = floor(d);
+                    else d = ceil(d);
+                    return double_to_bv(d);
+                }
+                case UIR_SYS_FUNC_RTOI: {
+                    if (sf->arg_count < 1 || !sf->args[0])
+                        return qsim_bit_vector_from_state(32, QSIM_X);
+                    qsim_bit_vector_t *v = eval_expr(ctx, sf->args[0]);
+                    if (!v) return qsim_bit_vector_from_state(32, QSIM_X);
+                    double d = arg_to_double(ctx, sf->args[0], v);
+                    qsim_bit_vector_free(v);
+                    int64_t iv = (int64_t)d;
+                    qsim_bit_vector_t *r = qsim_bit_vector_alloc(32);
+                    if (r) for (uint32_t i = 0; i < 32; i++)
+                        qsim_bit_set(r, i, ((uint64_t)iv >> i) & 1 ? QSIM_VAL_1 : QSIM_VAL_0);
+                    return r;
+                }
+                case UIR_SYS_FUNC_ITOR: {
+                    if (sf->arg_count < 1 || !sf->args[0])
+                        return qsim_bit_vector_from_state(64, QSIM_X);
+                    qsim_bit_vector_t *v = eval_expr(ctx, sf->args[0]);
+                    if (!v) return qsim_bit_vector_from_state(64, QSIM_X);
+                    uint64_t bits = 0;
+                    for (uint32_t i = 0; i < v->width && i < 64; i++)
+                        if (qsim_bit_get(v, i).state == QSIM_1) bits |= (1ULL << i);
+                    qsim_bit_vector_free(v);
+                    return double_to_bv((double)(int64_t)bits);
                 }
                 default:
                     return qsim_bit_vector_from_state(32, QSIM_X);

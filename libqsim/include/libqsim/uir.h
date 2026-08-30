@@ -162,6 +162,7 @@ typedef enum uir_signal_type {
     UIR_SIG_VHDL_SIGNAL,
     UIR_SIG_VHDL_VARIABLE,
     UIR_SIG_LOGIC,
+    UIR_SIG_REAL,     /* IEEE-754 double; storage is a 64-bit bit vector */
 } uir_signal_type_t;
 
 /* === Port === */
@@ -442,6 +443,7 @@ struct uir_literal {
     qsim_bit_vector_t *value;
     int is_signed;
     uint32_t width;
+    int is_real;              /* value holds IEEE-754 double bits */
 };
 
 /* === Reference (signal name in expressions) === */
@@ -797,6 +799,13 @@ typedef enum uir_sys_func_kind {
     UIR_SYS_FUNC_REALTIME = 5,
     UIR_SYS_FUNC_RANDOM = 6,
     UIR_SYS_FUNC_FOPEN = 7,
+    UIR_SYS_FUNC_BITSTOREAL = 8,
+    UIR_SYS_FUNC_REALTOBITS = 9,
+    UIR_SYS_FUNC_SQRT = 10,
+    UIR_SYS_FUNC_FLOOR = 11,
+    UIR_SYS_FUNC_CEIL = 12,
+    UIR_SYS_FUNC_RTOI = 13,
+    UIR_SYS_FUNC_ITOR = 14,
 } uir_sys_func_kind_t;
 
 struct uir_sys_func_expr {

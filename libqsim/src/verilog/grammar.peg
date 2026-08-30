@@ -56,25 +56,25 @@ port_list <- (port_item ( COMMA port_item )*)?
 
 port_item <- KW_INPUT
     { _parse_port_sig_type = UIR_SIG_WIRE; _parse_decl_signed = 0; }
-    (KW_REG { _parse_port_sig_type = UIR_SIG_REG; } / KW_WIRE / KW_LOGIC { _parse_port_sig_type = UIR_SIG_LOGIC; })? (KW_SIGNED { _parse_decl_signed = 1; })? range_opt ID
+    (KW_REG { _parse_port_sig_type = UIR_SIG_REG; } / KW_WIRE / KW_LOGIC { _parse_port_sig_type = UIR_SIG_LOGIC; } / KW_REAL { _parse_port_sig_type = UIR_SIG_REAL; })? (KW_SIGNED { _parse_decl_signed = 1; })? range_opt ID
     { _parse_saved = parse_strdup(yytext); _parse_array_size = 0; _parse_array_dims_count = 0; }
     array_dims_opt
     { _parse_add_port_signed(_parse_saved, UIR_PORT_IN, _parse_range_msb, _parse_range_lsb, _parse_port_sig_type); _parse_range_msb = 0; _parse_range_lsb = 0; free(_parse_saved); _parse_saved = NULL; }
   / KW_OUTPUT
     { _parse_port_sig_type = UIR_SIG_WIRE; _parse_decl_signed = 0; }
-    (KW_REG { _parse_port_sig_type = UIR_SIG_REG; } / KW_WIRE / KW_LOGIC { _parse_port_sig_type = UIR_SIG_LOGIC; })? (KW_SIGNED { _parse_decl_signed = 1; })? range_opt ID
+    (KW_REG { _parse_port_sig_type = UIR_SIG_REG; } / KW_WIRE / KW_LOGIC { _parse_port_sig_type = UIR_SIG_LOGIC; } / KW_REAL { _parse_port_sig_type = UIR_SIG_REAL; })? (KW_SIGNED { _parse_decl_signed = 1; })? range_opt ID
     { _parse_saved = parse_strdup(yytext); _parse_array_size = 0; _parse_array_dims_count = 0; }
     array_dims_opt
     { _parse_add_port_signed(_parse_saved, UIR_PORT_OUT, _parse_range_msb, _parse_range_lsb, _parse_port_sig_type); _parse_range_msb = 0; _parse_range_lsb = 0; free(_parse_saved); _parse_saved = NULL; }
   / KW_INOUT
     { _parse_port_sig_type = UIR_SIG_WIRE; _parse_decl_signed = 0; }
-    (KW_REG { _parse_port_sig_type = UIR_SIG_REG; } / KW_WIRE / KW_LOGIC { _parse_port_sig_type = UIR_SIG_LOGIC; })? (KW_SIGNED { _parse_decl_signed = 1; })? range_opt ID
+    (KW_REG { _parse_port_sig_type = UIR_SIG_REG; } / KW_WIRE / KW_LOGIC { _parse_port_sig_type = UIR_SIG_LOGIC; } / KW_REAL { _parse_port_sig_type = UIR_SIG_REAL; })? (KW_SIGNED { _parse_decl_signed = 1; })? range_opt ID
     { _parse_saved = parse_strdup(yytext); _parse_array_size = 0; _parse_array_dims_count = 0; }
     array_dims_opt
     { _parse_add_port_signed(_parse_saved, UIR_PORT_INOUT, _parse_range_msb, _parse_range_lsb, _parse_port_sig_type); _parse_range_msb = 0; _parse_range_lsb = 0; free(_parse_saved); _parse_saved = NULL; }
   / ID { add_bare_port_name(yytext); _parse_range_msb = 0; _parse_range_lsb = 0; }
 
-module_body <- ( attr_list? ( net_decl / reg_decl / logic_decl / integer_decl / input_decl
+module_body <- ( attr_list? ( net_decl / reg_decl / logic_decl / integer_decl / real_decl / input_decl
                / output_decl / inout_decl / assign_stmt
                / always_stmt / always_comb_stmt / always_ff_stmt / always_latch_stmt / initial_stmt
                / specify_stmt
@@ -152,10 +152,10 @@ gen_case_item <- KW_DEFAULT (COLON)?
                  gen_block
                    { generate_case_item_leave(); }
 
-input_decl <- KW_INPUT { _parse_decl_signed = 0; } (KW_SIGNED { _parse_decl_signed = 1; })? range_opt ID { _parse_saved = parse_strdup(yytext); _parse_array_size = 0; _parse_array_dims_count = 0; } array_dims_opt
+input_decl <- KW_INPUT ( KW_REAL ID { decl_real_port(yytext); } ( COMMA KW_REAL ID { decl_real_port(yytext); } )* SEMI / { _parse_decl_signed = 0; } (KW_SIGNED { _parse_decl_signed = 1; })? range_opt ID { _parse_saved = parse_strdup(yytext); _parse_array_size = 0; _parse_array_dims_count = 0; } array_dims_opt
     { decl_input(_parse_saved, parse_range_width(), _parse_array_size); free(_parse_saved); _parse_saved = NULL; }
     ( COMMA ID { _parse_saved = parse_strdup(yytext); _parse_array_size = 0; _parse_array_dims_count = 0; } array_dims_opt
-        { decl_input(_parse_saved, _parse_saved_range_width, _parse_array_size); free(_parse_saved); _parse_saved = NULL; } )* SEMI
+        { decl_input(_parse_saved, _parse_saved_range_width, _parse_array_size); free(_parse_saved); _parse_saved = NULL; } )* SEMI )
 
 output_decl <- KW_OUTPUT { _parse_decl_signed = 0; _parse_port_sig_type = UIR_SIG_WIRE; } (KW_REG { _parse_port_sig_type = UIR_SIG_REG; } / KW_WIRE)? (KW_SIGNED { _parse_decl_signed = 1; })? range_opt ID { _parse_saved = parse_strdup(yytext); _parse_array_size = 0; _parse_array_dims_count = 0; } array_dims_opt
     { decl_output(_parse_saved, parse_range_width(), _parse_array_size); free(_parse_saved); _parse_saved = NULL; }
@@ -209,10 +209,13 @@ integer_decl <- KW_INTEGER ID
     ( COMMA ID { decl_reg(yytext, 32, 0); } )*
     SEMI
 
+real_decl <- KW_REAL ID
+    { decl_real(yytext); }
+    ( COMMA ID { decl_real(yytext); } )*
+    SEMI
+
 param_decl <- ( KW_PARAMETER / KW_LOCALPARAM ) param_item ( COMMA param_item )* SEMI
-# Optional range is accepted and ignored: the value's own literal width wins
-# (uir_defparam_t has no width field; all real uses are sized literals).
-param_item <- range_opt ID { save_param_name(yytext); } ASSIGN const_expr { save_param_value(); }
+param_item <- ( KW_REAL { /* real marker: the value literal carries its own type */ } )? range_opt ID { save_param_name(yytext); } ASSIGN const_expr { save_param_value(); }
 
 defparam_stmt <- KW_DEFPARAM
     ID { save_defparam_start(yytext); }
@@ -492,8 +495,12 @@ system_task <- SYS_READMEMH LPAREN STRING { _parse_saved = parse_strdup(yytext);
     free(_parse_saved); _parse_saved = NULL; }
 
 seq_block <- KW_BEGIN COLON ID { begin_named_block(yytext);
-                                  _parse_block_name = parse_strdup(yytext); } statement* KW_END { end_named_block(); }
-          / KW_BEGIN statement* KW_END
+                                  _parse_block_name = parse_strdup(yytext); }
+    ( reg_decl / integer_decl / real_decl )*
+    statement* KW_END { end_named_block(); }
+  / KW_BEGIN
+    ( reg_decl / integer_decl / real_decl )*
+    statement* KW_END
 
 if_stmt <- KW_IF LPAREN expr RPAREN
     { if_then_start(); }
@@ -573,8 +580,8 @@ task_decl <- KW_TASK ( KW_AUTOMATIC { _parse_decl_automatic = 1; } )? ID
     task_item_decl* seq_block KW_ENDTASK
     { finish_task(); }
 
-func_item_decl <- input_decl / reg_decl / integer_decl
-task_item_decl <- input_decl / output_decl / inout_decl / reg_decl / integer_decl
+func_item_decl <- input_decl / reg_decl / integer_decl / real_decl
+task_item_decl <- input_decl / output_decl / inout_decl / reg_decl / integer_decl / real_decl
 
 blocking_assign <-
     ( ID { _parse_assign_lhs = parse_strdup(yytext); _parse_multi_index_count = 0; }
@@ -742,6 +749,20 @@ primary_expr <- LPAREN expr RPAREN
         { if (_parse_unit) do_sys_func_expr1(_parse_unit, UIR_SYS_FUNC_SIGNED); }
     / SYS_UNSIGNED LPAREN expr RPAREN
         { if (_parse_unit) do_sys_func_expr1(_parse_unit, UIR_SYS_FUNC_UNSIGNED); }
+    / SYS_BITSTOREAL LPAREN expr RPAREN
+        { if (_parse_unit) do_sys_func_expr1(_parse_unit, UIR_SYS_FUNC_BITSTOREAL); }
+    / SYS_REALTOBITS LPAREN expr RPAREN
+        { if (_parse_unit) do_sys_func_expr1(_parse_unit, UIR_SYS_FUNC_REALTOBITS); }
+    / SYS_SQRT LPAREN expr RPAREN
+        { if (_parse_unit) do_sys_func_expr1(_parse_unit, UIR_SYS_FUNC_SQRT); }
+    / SYS_FLOOR LPAREN expr RPAREN
+        { if (_parse_unit) do_sys_func_expr1(_parse_unit, UIR_SYS_FUNC_FLOOR); }
+    / SYS_CEIL LPAREN expr RPAREN
+        { if (_parse_unit) do_sys_func_expr1(_parse_unit, UIR_SYS_FUNC_CEIL); }
+    / SYS_RTOI LPAREN expr RPAREN
+        { if (_parse_unit) do_sys_func_expr1(_parse_unit, UIR_SYS_FUNC_RTOI); }
+    / SYS_ITOR LPAREN expr RPAREN
+        { if (_parse_unit) do_sys_func_expr1(_parse_unit, UIR_SYS_FUNC_ITOR); }
     / SYS_CLOG2 LPAREN expr RPAREN
         { if (_parse_unit) do_sys_func_expr1(_parse_unit, UIR_SYS_FUNC_CLOG2); }
     / SYS_TIME LPAREN RPAREN
@@ -860,6 +881,7 @@ KW_POSEDGE    <- "posedge"      !alnum spacing
 KW_NEGEDGE    <- "negedge"      !alnum spacing
 KW_PARAMETER  <- "parameter"    !alnum spacing
 KW_LOCALPARAM <- "localparam"   !alnum spacing
+KW_REAL       <- "real"         !alnum spacing
 KW_DEFAULT    <- "default"      !alnum spacing
 KW_FOREVER    <- "forever"      !alnum spacing
 KW_REPEAT     <- "repeat"       !alnum spacing
@@ -901,6 +923,13 @@ SYS_CLOG2     <- "$clog2"     !alnum spacing
 SYS_TIME      <- "$time"      !alnum spacing
 SYS_REALTIME  <- "$realtime"  !alnum spacing
 SYS_RANDOM    <- "$random"    !alnum spacing
+SYS_BITSTOREAL <- "$bitstoreal" !alnum spacing
+SYS_REALTOBITS <- "$realtobits" !alnum spacing
+SYS_SQRT       <- "$sqrt"       !alnum spacing
+SYS_FLOOR      <- "$floor"      !alnum spacing
+SYS_CEIL       <- "$ceil"       !alnum spacing
+SYS_RTOI       <- "$rtoi"       !alnum spacing
+SYS_ITOR       <- "$itor"       !alnum spacing
 SYS_SDF_ANNOTATE <- "$sdf_annotate" !alnum spacing
 SYS_SETUP     <- "$setup"     !alnum spacing
 SYS_HOLD      <- "$hold"      !alnum spacing
@@ -929,7 +958,7 @@ MINUSCOLON    <- "-:" spacing
 ID <- < [a-zA-Z_$] [a-zA-Z0-9_$]* > spacing
 # sized constants: <width>'<base><digits> or plain decimal
 # ? and Z/z for casez don't-care, X/x for casex
-NUMBER <- < ( digit+ "'" [sS]? [bBdDoOhH] [0-9a-fA-F_?ZzXx]+ / digit+ ) > spacing
+NUMBER <- < ( digit+ "'" [sS]? [bBdDoOhH] [0-9a-fA-F_?ZzXx]+ / digit+ ( '.' digit* )? ( [eE] [+-]? digit+ )? ) > spacing
 STRING <- '"' < ( !'"' . )* > '"' spacing
 
 LPAREN    <- '(' spacing

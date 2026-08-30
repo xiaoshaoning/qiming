@@ -1035,6 +1035,38 @@ static void decl_reg(const char *name, uint32_t width, uint32_t array_size) {
     }
 }
 
+/* real_decl: module signal or function-local real (IEEE-754 double, 64 bits). */
+static void decl_real(const char *name) {
+    if (_parse_func) {
+        uir_loc_t loc = {NULL, 0, 0};
+        uir_signal_t *sig = (uir_signal_t *)uir_alloc_node(
+            _parse_unit, UIR_SIGNAL, sizeof(uir_signal_t), loc);
+        if (sig) {
+            sig->name = parse_strdup(name);
+            sig->sig_type = UIR_SIG_REAL;
+            sig->width = 64;
+            sig->array_size = 0;
+            sig->is_signed = 1;
+            sig->init_value.state = QSIM_X;
+            sig->init_value.strength = QSIM_STRENGTH_STRONG;
+            uir_add_func_local(_parse_func, (uir_node_t *)sig);
+        }
+    } else if (_parse_unit) {
+        uir_signal_t *s = uir_add_signal(_parse_unit, name, UIR_SIG_REAL, 64, 0);
+        if (s) s->is_signed = 1;
+    }
+}
+
+/* input real v: function port (64-bit) or module input signal. */
+static void decl_real_port(const char *name) {
+    if (_parse_func) {
+        uir_add_func_port(_parse_func, name, UIR_PORT_IN, 64);
+    } else if (_parse_unit) {
+        uir_signal_t *s = uir_add_signal(_parse_unit, name, UIR_SIG_REAL, 64, 0);
+        if (s) s->is_signed = 1;
+    }
+}
+
 static void decl_logic(const char *name, uint32_t width, uint32_t array_size) {
     if (_parse_func) {
         uir_loc_t loc = {NULL, 0, 0};
@@ -2608,7 +2640,21 @@ static void do_nonblocking_assign_finish(uir_design_unit_t *unit) {
 /* Parse number text and create a literal node.
  * Handles plain decimal, sized based (b/o/d/h), and X/Z/? bits for casez. */
 static uir_node_t *parse_number_literal(uir_design_unit_t *unit, const char *text, uir_loc_t loc) {
-    unsigned long val = 0;
+    /* Floating-point literal (has '.' or exponent, no size quote): parse as
+     * IEEE-754 double and store its 64 bits in a real-flagged literal. */
+    if (!strchr(text, '\'') && (strchr(text, '.') || strchr(text, 'e') || strchr(text, 'E'))) {
+        double d = strtod(text, NULL);
+        uint64_t bits = 0;
+        memcpy(&bits, &d, sizeof(bits));
+        qsim_bit_vector_t *bv = qsim_bit_vector_alloc(64);
+        if (!bv) return NULL;
+        for (int i = 0; i < 64; i++)
+            qsim_bit_set(bv, i, ((bits >> i) & 1ULL) ? QSIM_VAL_1 : QSIM_VAL_0);
+        uir_literal_t *lit = (uir_literal_t *)uir_make_literal(unit, bv, loc);
+        if (lit) { lit->is_signed = 1; lit->is_real = 1; }
+        return (uir_node_t *)lit;
+    }
+    uint64_t val = 0;
     int base = 10;
     int width = 0;
     int has_xz = 0;
@@ -2639,9 +2685,9 @@ static uir_node_t *parse_number_literal(uir_design_unit_t *unit, const char *tex
         if (!has_xz) {
             while (*p) {
                 char c = *p;
-                if (c >= '0' && c <= '9') val = val * (unsigned long)base + (unsigned long)(c - '0');
-                else if (c >= 'a' && c <= 'f') val = val * (unsigned long)base + (unsigned long)(c - 'a' + 10);
-                else if (c >= 'A' && c <= 'F') val = val * (unsigned long)base + (unsigned long)(c - 'A' + 10);
+                if (c >= '0' && c <= '9') val = val * (uint64_t)base + (unsigned long)(c - '0');
+                else if (c >= 'a' && c <= 'f') val = val * (uint64_t)base + (unsigned long)(c - 'a' + 10);
+                else if (c >= 'A' && c <= 'F') val = val * (uint64_t)base + (unsigned long)(c - 'A' + 10);
                 else if (c == '_') { p++; continue; }
                 p++;
             }
