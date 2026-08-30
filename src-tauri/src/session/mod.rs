@@ -83,6 +83,12 @@ impl Session {
         }
     }
 
+    /// Run until the simulation time advances by `time_fs` (advances through
+    /// #-delay / time-based events; returns elapsed time).
+    pub fn step_time(&mut self, time_fs: u64) -> u64 {
+        unsafe { ffi::qsim_session_step_time(self.ptr, time_fs) }
+    }
+
     /// Get the total number of events processed during simulation.
     pub fn event_count(&self) -> usize {
         unsafe { ffi::qsim_session_get_event_count(self.ptr) }

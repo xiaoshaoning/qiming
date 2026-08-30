@@ -24,6 +24,24 @@ static void run(const char *label, const char *src, const char *sig,
     qsim_session_free(sess);
 }
 
+static void run_time(const char *label, const char *src, const char *sig,
+                    const char *expect, uint64_t until) {
+    qsim_session_t *sess = qsim_session_create();
+    int ok = qsim_session_compile_string(sess, "probe.v", src);
+    if (!ok) { printf("  %-14s PARSE FAILED\n", label); tests++; fails++; qsim_session_free(sess); return; }
+    ok = qsim_session_elaborate(sess);
+    if (!ok) { printf("  %-14s ELAB FAILED\n", label); tests++; fails++; qsim_session_free(sess); return; }
+    qsim_session_step_time(sess, until);
+    char *val = qsim_session_eval_str(sess, sig);
+    int good = val && strcmp(val, expect) == 0;
+    printf("  %-14s %s = %s (expect %s) %s\n", label, sig,
+           val ? val : "?", expect, good ? "OK" : "FAIL");
+    if (!good) fails++;
+    tests++;
+    free(val);
+    qsim_session_free(sess);
+}
+
 int main(void) {
     setvbuf(stdout, NULL, _IONBF, 0);
 
@@ -86,6 +104,26 @@ int main(void) {
         " for (i=0;i<5;i=i+1) sum=sum+i;\n"
         " $display(\"sum=%d\", sum); i=0; sum=0; end endmodule\n",
         "sum", "00000000000000000000000000000000");
+
+    /* Time-based control flow: consecutive delays + trailing $stop must fire
+     * at their own times (restructure_delays continuation bug: $stop used to
+     * execute at the first delay's fire time). x=2 -> LSB-first "0100". */
+    run_time("consec_delays",
+        "module t; reg [3:0] x; initial begin x=0;\n"
+        " #5 x=1; #5 x=2; $stop; end endmodule\n",
+        "x", "0100", 20);
+    /* Delay inside a loop: each iteration advances one time unit. x=3 -> "1100". */
+    run_time("delay_in_loop",
+        "module t; integer i; reg [3:0] x; initial begin x=0;\n"
+        " for (i=0;i<3;i=i+1) #1 x=x+1; end endmodule\n",
+        "x", "1100", 10);
+    /* Clock generator: forever #5 toggles, counter on posedge. cnt=4 -> "0010". */
+    run_time("clock_gen",
+        "module t; reg clk=0; reg [3:0] cnt=0;\n"
+        " always #5 clk=~clk;\n"
+        " always @(posedge clk) cnt=cnt+1;\n"
+        " initial #45 $stop; endmodule\n",
+        "cnt", "1010", 50);
 
     printf("\n%d/%d passed\n", tests - fails, tests);
     return fails ? 1 : 0;

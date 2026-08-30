@@ -93,10 +93,11 @@ fn cmd_simulate(args: &[String]) -> Result<(), String> {
         return Err("missing file argument".to_string());
     }
 
-    // Arguments: files... [steps] [--clock [name]]
+    // Arguments: files... [steps] [--clock [name]] [--until <time>]
     let mut files: Vec<&String> = Vec::new();
     let mut steps: u64 = 10;
     let mut clock: Option<String> = None;
+    let mut until: Option<u64> = None;
     let mut i = 0;
     while i < args.len() {
         let a = &args[i];
@@ -108,6 +109,13 @@ fn cmd_simulate(args: &[String]) -> Result<(), String> {
             } else {
                 clock = Some("clk".to_string());
                 i += 1;
+            }
+        } else if a == "--until" {
+            if i + 1 < args.len() {
+                until = args[i + 1].parse::<u64>().ok();
+                i += 2;
+            } else {
+                return Err("--until requires a time value".to_string());
             }
         } else if let Ok(n) = a.parse::<u64>() {
             steps = n;
@@ -158,27 +166,42 @@ fn cmd_simulate(args: &[String]) -> Result<(), String> {
         println!("      Use --clock <signal> to auto-drive a clock during simulation.");
     }
 
-    println!("Simulating for {} delta steps...", steps);
-    for step in 0..steps {
-        // Drive the clock before each step (odd steps high, even steps low),
-        // producing a rising edge every two steps.
-        if let Some(clk) = &clock {
-            session.force_str(clk, if step % 2 == 0 { "1" } else { "0" }).ok();
+    if let Some(until) = until {
+        // Time-based mode: advance through #-delay events up to `until`
+        // (the testbench is expected to generate its own clocks).
+        println!("Simulating until time {}...", until);
+        let elapsed = session.step_time(until);
+        println!("Advanced {} time units; final state:", elapsed);
+        for i in 0..sig_count {
+            if let Some(sig_name) = session.signal_name(i) {
+                if let Ok(val) = session.eval_str(&sig_name) {
+                    println!("  {} = {}", sig_name, val);
+                }
+            }
         }
-        match session.step_delta() {
-            Ok(()) => {
-                println!("  Step {}: signals updated", step + 1);
-                for i in 0..sig_count {
-                    if let Some(sig_name) = session.signal_name(i) {
-                        if let Ok(val) = session.eval_str(&sig_name) {
-                            println!("    {} = {}", sig_name, val);
+    } else {
+        println!("Simulating for {} delta steps...", steps);
+        for step in 0..steps {
+            // Drive the clock before each step (odd steps high, even steps low),
+            // producing a rising edge every two steps.
+            if let Some(clk) = &clock {
+                session.force_str(clk, if step % 2 == 0 { "1" } else { "0" }).ok();
+            }
+            match session.step_delta() {
+                Ok(()) => {
+                    println!("  Step {}: signals updated", step + 1);
+                    for i in 0..sig_count {
+                        if let Some(sig_name) = session.signal_name(i) {
+                            if let Ok(val) = session.eval_str(&sig_name) {
+                                println!("    {} = {}", sig_name, val);
+                            }
                         }
                     }
                 }
-            }
-            Err(e) => {
-                println!("  Step {}: done ({})", step + 1, e);
-                break;
+                Err(e) => {
+                    println!("  Step {}: done ({})", step + 1, e);
+                    break;
+                }
             }
         }
     }

@@ -827,6 +827,11 @@ static void restructure_delays(uir_block_t *block) {
                 if (s->kind == UIR_DELAY) ((uir_delay_t *)s)->body = (uir_node_t *)cont;
                 else if (s->kind == UIR_WAIT) ((uir_wait_t *)s)->body = (uir_node_t *)cont;
                 else if (s->kind == UIR_EVENT_CTRL) ((uir_event_ctrl_t *)s)->body = (uir_node_t *)cont;
+                /* Recursively restructure the continuation: without this, a
+                 * second blocking node inside it (and any statements after
+                 * it, e.g. $stop after "#5 $display") would execute at the
+                 * first delay's fire time instead of its own. */
+                restructure_delays(cont);
                 block->stmt_count = i + 1;
             }
             break; /* Only the first blocking node in the block needs restructuring */
