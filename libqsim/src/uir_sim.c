@@ -19,6 +19,9 @@ static __declspec(thread) int tls_pid = -1;
 static __thread char tls_prefix[256];
 static __thread int tls_pid = -1;
 #endif
+/* Max synchronous loop iterations before falling back to event scheduling:
+ * bounds exec_stmt recursion depth (MSVC main-thread stack is 1 MB). */
+#define LOOP_SYNC_BUDGET 256
 #include <string.h>
 #include <stdio.h>
 /* Note: platform atomics used instead of <stdatomic.h> for MSVC compat.
@@ -315,6 +318,10 @@ struct uir_sim_context {
 
     /* Current named block hierarchical path for event/waiter cancellation */
     char current_block_hier[256];
+
+    /* Remaining synchronous loop iterations before a loop falls back to
+     * event scheduling (bounds exec_stmt recursion depth on huge loops). */
+    uint32_t loop_sync_budget;
 
     /* Signal hash table (O(1) name→index lookup) */
     signal_ht_entry_t *sig_ht;
@@ -5330,6 +5337,20 @@ static void exec_stmt(uir_sim_context_t *ctx, uir_node_t *stmt) {
         case UIR_LOOP: {
             uir_loop_t *loop = (uir_loop_t *)stmt;
             if (loop->init_stmt) exec_stmt(ctx, loop->init_stmt);
+            /* Entry check: the loop-back only tests the condition after the
+             * first body run, so a while/for/repeat with an initially-false
+             * condition would otherwise execute the body once (do-while). */
+            if (loop->condition) {
+                qsim_bit_vector_t *cv = eval_expr(ctx, loop->condition);
+                int cond_true = 0;
+                if (cv) {
+                    for (uint32_t i = 0; i < cv->width; i++)
+                        if (qsim_bit_get(cv, i).state == QSIM_1) { cond_true = 1; break; }
+                    qsim_bit_vector_free(cv);
+                }
+                if (!cond_true) break;
+            }
+            ctx->loop_sync_budget = LOOP_SYNC_BUDGET;
             if (loop->body) exec_stmt(ctx, loop->body);
             break;
         }
@@ -5345,9 +5366,23 @@ static void exec_stmt(uir_sim_context_t *ctx, uir_node_t *stmt) {
                 /* NULL condition means infinite loop (forever) */
                 cond_true = 1;
             }
-            if (cond_true)
-                schedule_stmt_event(ctx, ctx->current_time, lb->body, 0, NULL,
-                                    ctx->current_block_hier);
+            if (cond_true) {
+                /* Re-run the body synchronously so the loop completes before
+                 * the enclosing block continues (blocking semantics). The old
+                 * code scheduled an event, so statements after the loop ran
+                 * before it finished: $display saw mid-loop values and two
+                 * loops interleaved over shared variables. A budget bounds
+                 * the recursion depth; past it, fall back to event scheduling
+                 * (a single loop's tail still runs to completion). */
+                if (ctx->loop_sync_budget > 0) {
+                    ctx->loop_sync_budget--;
+                    exec_stmt(ctx, lb->body);
+                } else {
+                    ctx->loop_sync_budget = LOOP_SYNC_BUDGET;
+                    schedule_stmt_event(ctx, ctx->current_time, lb->body, 0, NULL,
+                                        ctx->current_block_hier);
+                }
+            }
             break;
         }
         case UIR_WAIT: {

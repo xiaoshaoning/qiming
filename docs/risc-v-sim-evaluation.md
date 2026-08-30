@@ -13,6 +13,17 @@ locations so each fix has a starting point.
 
 ---
 
+**Fix status (updated):** #1 (procedural loops) **FIXED** in `08c47e7`+ — the loop
+root cause was not "zero iterations" but the loop-back scheduling each iteration
+as an event (do-while semantics + interleaving with following statements).
+`UIR_LOOP_BACK` now re-runs the body synchronously (blocking), `UIR_LOOP` checks
+the entry condition, and a 256-iteration budget falls back to event scheduling
+for huge loops. Regression: `libqsim/tests/test_loop_blocks.c` (12 checks,
+ctest `test_loop_blocks`). Remaining: #8+#9 (time + log printing) are the next
+unblockers per the priority order below.
+
+---
+
 ## 1. Procedural `for`/`while` loops never iterate  (SIMULATOR BUG)
 
 Loop bodies execute zero times (or once with the initial index). Observed:

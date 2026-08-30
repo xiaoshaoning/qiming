@@ -204,6 +204,11 @@ if(BUILD_TESTING)
     target_link_libraries(test_bugs_from_report PRIVATE qsim)
     add_test(NAME test_bugs_from_report COMMAND test_bugs_from_report)
 
+    add_executable(test_loop_blocks tests/test_loop_blocks.c)
+    target_include_directories(test_loop_blocks PRIVATE tests)
+    target_link_libraries(test_loop_blocks PRIVATE qsim)
+    add_test(NAME test_loop_blocks COMMAND test_loop_blocks)
+
     add_executable(test_bug12_diag tests/test_bug12_diag.c)
     target_include_directories(test_bug12_diag PRIVATE tests)
     target_link_libraries(test_bug12_diag PRIVATE qsim)
