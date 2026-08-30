@@ -9850,7 +9850,7 @@ YY_RULE(int) yy_COMMA(yycontext *yy)
 }
 YY_RULE(int) yy_param_item(yycontext *yy)
 {  int yypos0= yy->__pos, yythunkpos0= yy->__thunkpos;
-  yyprintf((stderr, "%s\n", "param_item"));  if (!yy_ID(yy)) goto l856;  yyDo(yy, yy_1_param_item, yy->__begin, yy->__end);  if (!yy_ASSIGN(yy)) goto l856;  if (!yy_const_expr(yy)) goto l856;  yyDo(yy, yy_2_param_item, yy->__begin, yy->__end);
+  yyprintf((stderr, "%s\n", "param_item"));  if (!yy_range_opt(yy)) goto l856;  if (!yy_ID(yy)) goto l856;  yyDo(yy, yy_1_param_item, yy->__begin, yy->__end);  if (!yy_ASSIGN(yy)) goto l856;  if (!yy_const_expr(yy)) goto l856;  yyDo(yy, yy_2_param_item, yy->__begin, yy->__end);
   yyprintf((stderr, "  ok   %s @ %s\n", "param_item", yy->__buf+yy->__pos));
   return 1;
   l856:;	  yy->__pos= yypos0; yy->__thunkpos= yythunkpos0;

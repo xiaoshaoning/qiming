@@ -50,6 +50,36 @@ int main(void) {
         qsim_session_free(sess);
     }
 
+    /* Ranged localparam: the optional [msb:lsb] range must parse and the
+     * value's own width (64-bit literal) must win. 0x1234 -> LSB-first. */
+    printf("\n=== Ranged localparam ===\n");
+    {
+        const char *src =
+        "module bug_rp;\n"
+        "  localparam [63:0] WIDE = 64'h1234;\n"
+        "  reg [63:0] rp_out;\n"
+        "  initial begin\n"
+        "    rp_out = WIDE;\n"
+        "  end\n"
+        "endmodule\n";
+
+        qsim_session_t *sess = qsim_session_create();
+        int ok = qsim_session_compile_string(sess, "bug_rp.v", src);
+        if (!ok) { printf("  PARSE FAILED\n"); tests++; }
+        else {
+            ok = qsim_session_elaborate(sess);
+            if (!ok) { printf("  ELAB FAILED\n"); tests++; }
+            else {
+                qsim_session_step_delta(sess);
+                char *val = qsim_session_eval_str(sess, "rp_out");
+                check("rp_out (expect 0x1234)", val,
+                      "0010110001001000000000000000000000000000000000000000000000000000");
+                free(val);
+            }
+        }
+        qsim_session_free(sess);
+    }
+
     /* ── Bug 6: Replication inside concatenation ── */
     /* Note: grammar can't parse {{{8{a}}, {8{b}}}} (pre-existing PEG limitation) */
     printf("\n=== Bug 6: Replication inside concatenation ===\n");

@@ -204,7 +204,9 @@ integer_decl <- KW_INTEGER ID
     SEMI
 
 param_decl <- ( KW_PARAMETER / KW_LOCALPARAM ) param_item ( COMMA param_item )* SEMI
-param_item <- ID { save_param_name(yytext); } ASSIGN const_expr { save_param_value(); }
+# Optional range is accepted and ignored: the value's own literal width wins
+# (uir_defparam_t has no width field; all real uses are sized literals).
+param_item <- range_opt ID { save_param_name(yytext); } ASSIGN const_expr { save_param_value(); }
 
 defparam_stmt <- KW_DEFPARAM
     ID { save_defparam_start(yytext); }
