@@ -7,6 +7,18 @@
 #include "libqsim/value.h"
 
 #include <stdlib.h>
+/* Process-execution context, thread-local: both the leader and worker
+ * threads run process bodies concurrently during parallel Phase 2b, and
+ * exec_stmt resolves refs through tls_prefix / tls_pid. Sharing them on
+ * the context would race (a worker's exec could resolve a name under the
+ * leader's prefix, writing the wrong signal). */
+#ifdef _MSC_VER
+static __declspec(thread) char tls_prefix[256];
+static __declspec(thread) int tls_pid = -1;
+#else
+static __thread char tls_prefix[256];
+static __thread int tls_pid = -1;
+#endif
 #include <string.h>
 #include <stdio.h>
 /* Note: platform atomics used instead of <stdatomic.h> for MSVC compat.
@@ -227,8 +239,6 @@ struct uir_sim_context {
     size_t process_count;
     size_t process_cap;
 
-    char current_prefix[256];       /* set before process body execution */
-    int current_process_id;         /* set before process body exec, -1 = none */
     uint32_t current_context_width; /* target width for expression evaluation (0 = auto) */
     int current_is_signed;          /* signedness from current expression evaluation */
     uir_design_unit_t **units;
@@ -1081,10 +1091,10 @@ static void find_refs_in_node(uir_node_t *node, uir_sim_context_t *ctx,
             for (size_t _mi = 0; _mi < ref->multi_idx_count; _mi++)
                 find_refs_in_node(ref->multi_index[_mi], ctx, sigs, count, cap);
             idx = -1;
-            if (ctx->current_prefix[0]) {
+            if (tls_prefix[0]) {
                 char prefixed[520];
                 snprintf(prefixed, sizeof(prefixed), "%s.%s",
-                         ctx->current_prefix, ref->name);
+                         tls_prefix, ref->name);
                 idx = find_signal_idx(ctx, prefixed);
             }
             if (idx < 0) idx = find_signal_idx(ctx, ref->name);
@@ -1778,10 +1788,10 @@ static void add_udp_instances(uir_sim_context_t *ctx, uir_design_unit_t *unit,
                                const char *prefix) {
     char saved_prefix[520] = "";
     if (prefix[0]) {
-        strncpy(saved_prefix, ctx->current_prefix, sizeof(saved_prefix) - 1);
+        strncpy(saved_prefix, tls_prefix, sizeof(saved_prefix) - 1);
         saved_prefix[sizeof(saved_prefix) - 1] = '\0';
-        strncpy(ctx->current_prefix, prefix, sizeof(ctx->current_prefix) - 1);
-        ctx->current_prefix[sizeof(ctx->current_prefix) - 1] = '\0';
+        strncpy(tls_prefix, prefix, sizeof(tls_prefix) - 1);
+        tls_prefix[sizeof(tls_prefix) - 1] = '\0';
     }
 
     for (size_t i = 0; i < unit->instance_count; i++) {
@@ -1852,8 +1862,8 @@ static void add_udp_instances(uir_sim_context_t *ctx, uir_design_unit_t *unit,
     }
 
     if (prefix[0]) {
-        strncpy(ctx->current_prefix, saved_prefix, sizeof(ctx->current_prefix) - 1);
-        ctx->current_prefix[sizeof(ctx->current_prefix) - 1] = '\0';
+        strncpy(tls_prefix, saved_prefix, sizeof(tls_prefix) - 1);
+        tls_prefix[sizeof(tls_prefix) - 1] = '\0';
     }
 }
 
@@ -1861,10 +1871,10 @@ static void add_cont_assigns(uir_sim_context_t *ctx, uir_design_unit_t *unit,
                               const char *prefix) {
     char saved_prefix[520] = "";
     if (prefix[0]) {
-        strncpy(saved_prefix, ctx->current_prefix, sizeof(saved_prefix) - 1);
+        strncpy(saved_prefix, tls_prefix, sizeof(saved_prefix) - 1);
         saved_prefix[sizeof(saved_prefix) - 1] = '\0';
-        strncpy(ctx->current_prefix, prefix, sizeof(ctx->current_prefix) - 1);
-        ctx->current_prefix[sizeof(ctx->current_prefix) - 1] = '\0';
+        strncpy(tls_prefix, prefix, sizeof(tls_prefix) - 1);
+        tls_prefix[sizeof(tls_prefix) - 1] = '\0';
     }
     for (size_t i = 0; i < unit->assign_count; i++) {
         size_t n = ctx->cont_assign_count;
@@ -1900,8 +1910,8 @@ static void add_cont_assigns(uir_sim_context_t *ctx, uir_design_unit_t *unit,
         ctx->cont_assign_count = n + 1;
     }
     if (prefix[0]) {
-        strncpy(ctx->current_prefix, saved_prefix, sizeof(ctx->current_prefix) - 1);
-        ctx->current_prefix[sizeof(ctx->current_prefix) - 1] = '\0';
+        strncpy(tls_prefix, saved_prefix, sizeof(tls_prefix) - 1);
+        tls_prefix[sizeof(tls_prefix) - 1] = '\0';
     }
     for (size_t i = 0; i < unit->instance_count; i++) {
         uir_instance_t *inst = unit->instances[i];
@@ -1978,10 +1988,10 @@ static void add_path_delays(uir_sim_context_t *ctx, uir_design_unit_t *unit,
                              const char *prefix) {
     char saved_prefix[520] = "";
     if (prefix[0]) {
-        strncpy(saved_prefix, ctx->current_prefix, sizeof(saved_prefix) - 1);
+        strncpy(saved_prefix, tls_prefix, sizeof(saved_prefix) - 1);
         saved_prefix[sizeof(saved_prefix) - 1] = '\0';
-        strncpy(ctx->current_prefix, prefix, sizeof(ctx->current_prefix) - 1);
-        ctx->current_prefix[sizeof(ctx->current_prefix) - 1] = '\0';
+        strncpy(tls_prefix, prefix, sizeof(tls_prefix) - 1);
+        tls_prefix[sizeof(tls_prefix) - 1] = '\0';
     }
     for (size_t i = 0; i < unit->specify_count; i++) {
         uir_specify_t *spec = unit->specifies[i];
@@ -2023,8 +2033,8 @@ static void add_path_delays(uir_sim_context_t *ctx, uir_design_unit_t *unit,
         }
     }
     if (prefix[0]) {
-        strncpy(ctx->current_prefix, saved_prefix, sizeof(ctx->current_prefix) - 1);
-        ctx->current_prefix[sizeof(ctx->current_prefix) - 1] = '\0';
+        strncpy(tls_prefix, saved_prefix, sizeof(tls_prefix) - 1);
+        tls_prefix[sizeof(tls_prefix) - 1] = '\0';
     }
     /* Recurse into instances */
     for (size_t i = 0; i < unit->instance_count; i++) {
@@ -2631,10 +2641,10 @@ static void find_writes_in_node(uir_node_t *node, uir_sim_context_t *ctx,
             if (a->lhs && a->lhs->kind == UIR_REF) {
                 uir_ref_t *ref = (uir_ref_t *)a->lhs;
                 int idx = -1;
-                if (ctx->current_prefix[0]) {
+                if (tls_prefix[0]) {
                     char prefixed[520];
                     snprintf(prefixed, sizeof(prefixed), "%s.%s",
-                             ctx->current_prefix, ref->name);
+                             tls_prefix, ref->name);
                     idx = find_signal_idx(ctx, prefixed);
                 }
                 if (idx < 0) idx = find_signal_idx(ctx, ref->name);
@@ -2653,10 +2663,10 @@ static void find_writes_in_node(uir_node_t *node, uir_sim_context_t *ctx,
             if (f->lhs && f->lhs->kind == UIR_REF) {
                 uir_ref_t *ref = (uir_ref_t *)f->lhs;
                 int idx = -1;
-                if (ctx->current_prefix[0]) {
+                if (tls_prefix[0]) {
                     char prefixed[520];
                     snprintf(prefixed, sizeof(prefixed), "%s.%s",
-                             ctx->current_prefix, ref->name);
+                             tls_prefix, ref->name);
                     idx = find_signal_idx(ctx, prefixed);
                 }
                 if (idx < 0) idx = find_signal_idx(ctx, ref->name);
@@ -2675,10 +2685,10 @@ static void find_writes_in_node(uir_node_t *node, uir_sim_context_t *ctx,
             if (r->target && r->target->kind == UIR_REF) {
                 uir_ref_t *ref = (uir_ref_t *)r->target;
                 int idx = -1;
-                if (ctx->current_prefix[0]) {
+                if (tls_prefix[0]) {
                     char prefixed[520];
                     snprintf(prefixed, sizeof(prefixed), "%s.%s",
-                             ctx->current_prefix, ref->name);
+                             tls_prefix, ref->name);
                     idx = find_signal_idx(ctx, prefixed);
                 }
                 if (idx < 0) idx = find_signal_idx(ctx, ref->name);
@@ -2749,6 +2759,13 @@ static const char *sig_name(uir_node_t *node) {
     return ((uir_signal_t *)node)->name;
 }
 
+static const char *signal_node_name(const uir_node_t *n) {
+    if (!n) return NULL;
+    if (n->kind == UIR_SIGNAL) return ((const uir_signal_t *)n)->name;
+    if (n->kind == UIR_PORT) return ((const uir_port_t *)n)->name;
+    return NULL;
+}
+
 /* Build signal graph partitions (weakly-connected components) for
  * thread-parallel delta evaluation. Called at end of uir_sim_create. */
 static void build_signal_partitions(uir_sim_context_t *ctx) {
@@ -2796,13 +2813,13 @@ static void build_signal_partitions(uir_sim_context_t *ctx) {
         int *writes = NULL;
         size_t write_count = 0, write_cap = 0;
         if (ctx->process_prefixes[p][0]) {
-            strncpy(ctx->current_prefix, ctx->process_prefixes[p],
-                    sizeof(ctx->current_prefix) - 1);
-            ctx->current_prefix[sizeof(ctx->current_prefix) - 1] = '\0';
+            strncpy(tls_prefix, ctx->process_prefixes[p],
+                    sizeof(tls_prefix) - 1);
+            tls_prefix[sizeof(tls_prefix) - 1] = '\0';
         }
         if (proc->body) find_writes_in_node(proc->body, ctx, &writes, &write_count, &write_cap);
         if (ctx->process_prefixes[p][0])
-            ctx->current_prefix[0] = '\0';
+            tls_prefix[0] = '\0';
 
         if (proc->sensitivity_count > 0 && write_count > 0) {
             /* Union each sensitivity signal with each write target */
@@ -2871,13 +2888,21 @@ static void build_signal_partitions(uir_sim_context_t *ctx) {
                 ctx->process_partition[p] = 0; /* default to partition 0 */
                 if (proc && proc->sensitivity_count > 0) {
                     for (size_t s = 0; s < proc->sensitivity_count; s++) {
-                        if (!proc->sensitivity_list[s].signal) continue;
+                        /* Resolve under the process's prefix — processes are
+                         * shared across instances, so the module-local name
+                         * alone would map every instance to partition 0,
+                         * putting all process work on thread 0. */
                         int sig_idx = -1;
-                        if (proc->sensitivity_list[s].signal->kind == UIR_SIGNAL ||
-                            proc->sensitivity_list[s].signal->kind == UIR_PORT) {
-                            sig_idx = find_signal_idx(ctx,
-                                ((uir_signal_t *)proc->sensitivity_list[s].signal)->name);
+                        uir_node_t *sn = proc->sensitivity_list[s].signal;
+                        const char *sens_name = signal_node_name(sn);
+                        if (sens_name && ctx->process_prefixes[p][0]) {
+                            char prefixed[520];
+                            snprintf(prefixed, sizeof(prefixed), "%s.%s",
+                                     ctx->process_prefixes[p], sens_name);
+                            sig_idx = find_signal_idx(ctx, prefixed);
                         }
+                        if (sig_idx < 0 && sens_name)
+                            sig_idx = find_signal_idx(ctx, sens_name);
                         if (sig_idx >= 0) {
                             ctx->process_partition[p] = ctx->signal_partition[sig_idx];
                             break;
@@ -2925,12 +2950,12 @@ static void schedule_event(uir_sim_context_t *ctx, uint64_t time, uint32_t delta
      * than queuing a new event.  This implements VHDL "last signal assignment wins
      * within a process" semantics while preserving multi-driver resolution (events
      * from different processes must NOT replace each other). */
-    if (is_nba && ctx->current_process_id >= 0) {
+    if (is_nba && tls_pid >= 0) {
         if (tls_ts) {
             for (sim_event_t *e = tls_ts->pending_head; e; e = e->next) {
                 if (e->time == time && e->delta == delta &&
                     e->sig_idx == sig_idx && e->is_nba &&
-                    e->src_pid == ctx->current_process_id &&
+                    e->src_pid == tls_pid &&
                     e->ps_lo == ps_lo && e->ps_hi == ps_hi) {
                     qsim_bit_vector_free(e->value);
                     e->value = value;
@@ -2944,7 +2969,7 @@ static void schedule_event(uir_sim_context_t *ctx, uint64_t time, uint32_t delta
             for (sim_event_t *e = ctx->event_head; e; e = e->next) {
                 if (e->time == time && e->delta == delta &&
                     e->sig_idx == sig_idx && e->is_nba &&
-                    e->src_pid == ctx->current_process_id &&
+                    e->src_pid == tls_pid &&
                     e->ps_lo == ps_lo && e->ps_hi == ps_hi) {
                     qsim_bit_vector_free(e->value);
                     e->value = value;
@@ -2973,7 +2998,7 @@ static void schedule_event(uir_sim_context_t *ctx, uint64_t time, uint32_t delta
         ev->sig_idx = sig_idx;
         ev->value = value;
         ev->is_nba = is_nba;
-        ev->src_pid = ctx->current_process_id;
+        ev->src_pid = tls_pid;
         ev->has_part_select = (ps_lo >= 0 && ps_hi >= 0);
         ev->ps_lo = ps_lo;
         ev->ps_hi = ps_hi;
@@ -3000,7 +3025,7 @@ static void schedule_event(uir_sim_context_t *ctx, uint64_t time, uint32_t delta
     ev->sig_idx = sig_idx;
     ev->value = value;
     ev->is_nba = is_nba;
-    ev->src_pid = ctx->current_process_id;
+    ev->src_pid = tls_pid;
     ev->has_part_select = (ps_lo >= 0 && ps_hi >= 0);
     ev->ps_lo = ps_lo;
     ev->ps_hi = ps_hi;
@@ -3130,10 +3155,10 @@ static qsim_bit_vector_t *eval_expr(uir_sim_context_t *ctx, uir_node_t *node) {
         case UIR_REF: {
             uir_ref_t *ref = (uir_ref_t *)node;
             int idx = -1;
-            if (ctx->current_prefix[0]) {
+            if (tls_prefix[0]) {
                 char prefixed[520];
                 snprintf(prefixed, sizeof(prefixed), "%s.%s",
-                         ctx->current_prefix, ref->name);
+                         tls_prefix, ref->name);
                 idx = find_signal_idx(ctx, prefixed);
             }
             if (idx < 0) idx = find_signal_idx(ctx, ref->name);
@@ -3372,7 +3397,7 @@ static qsim_bit_vector_t *eval_expr(uir_sim_context_t *ctx, uir_node_t *node) {
 
             /* Save current prefix */
             char saved_prefix[256] = "";
-            strncpy(saved_prefix, ctx->current_prefix, sizeof(saved_prefix) - 1);
+            strncpy(saved_prefix, tls_prefix, sizeof(saved_prefix) - 1);
 
             /* Save automatic frame state and re-initialize to X */
             qsim_bit_vector_t **auto_saved = NULL;
@@ -3409,7 +3434,7 @@ static qsim_bit_vector_t *eval_expr(uir_sim_context_t *ctx, uir_node_t *node) {
             }
 
             /* Set function prefix and execute body */
-            strncpy(ctx->current_prefix, frame->prefix, sizeof(ctx->current_prefix) - 1);
+            strncpy(tls_prefix, frame->prefix, sizeof(tls_prefix) - 1);
             exec_stmt(ctx, ft->body);
 
             /* Read return value BEFORE restoring automatic state */
@@ -3430,7 +3455,7 @@ static qsim_bit_vector_t *eval_expr(uir_sim_context_t *ctx, uir_node_t *node) {
             }
 
             /* Restore prefix */
-            strncpy(ctx->current_prefix, saved_prefix, sizeof(ctx->current_prefix) - 1);
+            strncpy(tls_prefix, saved_prefix, sizeof(tls_prefix) - 1);
 
             if (result) return result;
             return qsim_bit_vector_from_state(1, QSIM_X);
@@ -3651,14 +3676,97 @@ static void check_and_trigger_ca_only(uir_sim_context_t *ctx, uint32_t sig_idx,
     check_and_trigger_impl(ctx, sig_idx, old_val, new_val, 0, 0);
 }
 
+/* Match a process's sensitivity entry against a changed flat signal.
+ * Processes are shared across instances (same uir_process_t* with a
+ * per-instance prefix in ctx->process_prefixes[]), and collect_signals
+ * aliases the module node under every instance path, so node-pointer
+ * identity cannot distinguish per-instance signals. Resolve the
+ * sensitivity signal's name under the process's hierarchical prefix. */
+/* Flat signal index of a process's sensitivity entry, resolved by name
+ * under the process's hierarchical prefix (see sensitivity_matches). */
+static int sensitivity_signal_idx(uir_sim_context_t *ctx,
+                                   const uir_process_t *proc, size_t proc_idx,
+                                   size_t sens_idx) {
+    const char *name = signal_node_name(proc->sensitivity_list[sens_idx].signal);
+    if (!name) return -1;
+    const char *prefix = ctx->process_prefixes[proc_idx];
+    if (prefix[0]) {
+        char flat_name[520];
+        snprintf(flat_name, sizeof(flat_name), "%s.%s", prefix, name);
+        return find_signal_idx(ctx, flat_name);
+    }
+    return find_signal_idx(ctx, name);
+}
+
+static int sensitivity_matches(uir_sim_context_t *ctx,
+                                const uir_process_t *proc, size_t proc_idx,
+                                size_t sens_idx, uint32_t changed_sig) {
+    return sensitivity_signal_idx(ctx, proc, proc_idx, sens_idx) == (int)changed_sig;
+}
+
+/* Propagate a changed signal through its port connection wires (child<->parent),
+ * scheduling an event on the far side only when the values differ. Used by the
+ * serial trigger path (per change) and the parallel path's Phase 2c (per change
+ * from all threads' lists) — the parallel engine otherwise never propagates
+ * output-port (child->parent) changes such as u0.val -> val_0. */
+static void propagate_port_wires(uir_sim_context_t *ctx, uint32_t sig_idx) {
+    for (size_t w = 0; w < ctx->port_wire_count; w++) {
+        if ((uint32_t)ctx->port_wires[w].src_sig_idx != sig_idx) continue;
+        uint32_t dst_idx = (uint32_t)ctx->port_wires[w].dst_sig_idx;
+        int part_lo = ctx->port_wires[w].part_lo;
+        int part_width = ctx->port_wires[w].part_width;
+        uir_port_dir_t dir = ctx->port_wires[w].dir;
+        qsim_bit_vector_t *src_val = ctx->signals[sig_idx].value;
+        qsim_bit_vector_t *dst_val = ctx->signals[dst_idx].value;
+
+        int differs = 0;
+        if (part_lo >= 0 && dir == UIR_PORT_IN) {
+            for (uint32_t b = 0; b < (uint32_t)part_width; b++) {
+                qsim_value_t sv = qsim_bit_get(src_val, (uint32_t)part_lo + b);
+                qsim_value_t dv = qsim_bit_get(dst_val, b);
+                if (sv.state != dv.state) { differs = 1; break; }
+            }
+        } else if (part_lo >= 0 && dir == UIR_PORT_OUT) {
+            for (uint32_t b = 0; b < (uint32_t)part_width; b++) {
+                qsim_value_t sv = qsim_bit_get(src_val, b);
+                qsim_value_t dv = qsim_bit_get(dst_val, (uint32_t)part_lo + b);
+                if (sv.state != dv.state) { differs = 1; break; }
+            }
+        } else {
+            uint32_t cmp_w = src_val->width < dst_val->width
+                ? src_val->width : dst_val->width;
+            for (uint32_t b = 0; b < cmp_w; b++) {
+                if (qsim_bit_get(src_val, b).state != qsim_bit_get(dst_val, b).state) {
+                    differs = 1; break;
+                }
+            }
+        }
+
+        if (differs) {
+            qsim_bit_vector_t *val;
+            if (part_lo >= 0 && dir == UIR_PORT_IN) {
+                val = qsim_bit_vector_alloc((uint32_t)part_width);
+                for (uint32_t b = 0; b < (uint32_t)part_width; b++)
+                    qsim_bit_set(val, b, qsim_bit_get(src_val, (uint32_t)part_lo + b));
+            } else if (part_lo >= 0 && dir == UIR_PORT_OUT) {
+                val = qsim_bit_vector_clone(dst_val);
+                for (uint32_t b = 0; b < (uint32_t)part_width; b++)
+                    qsim_bit_set(val, (uint32_t)part_lo + b, qsim_bit_get(src_val, b));
+            } else {
+                val = qsim_bit_vector_clone(src_val);
+            }
+            schedule_event(ctx, ctx->current_time, ctx->current_delta,
+                           dst_idx, val, 0, -1, -1);
+        }
+    }
+}
+
 static void check_and_trigger_impl(uir_sim_context_t *ctx, uint32_t sig_idx,
                                     const qsim_bit_vector_t *old_val,
                                     const qsim_bit_vector_t *new_val,
                                     int depth, int exec_processes) {
     /* Safety limit for cascaded continuous assigns */
     if (depth > 16) return;
-
-    uir_node_t *sig_node = ctx->signals[sig_idx].node;
 
     /* ── Phase 1: Evaluate continuous assigns ──
      * For delay=0 (Verilog continuous assign): update target signal
@@ -3678,18 +3786,18 @@ static void check_and_trigger_impl(uir_sim_context_t *ctx, uint32_t sig_idx,
         uint32_t saved_cw = ctx->current_context_width;
         char saved_pfx[520] = "";
         if (entry->prefix[0]) {
-            strncpy(saved_pfx, ctx->current_prefix, sizeof(saved_pfx) - 1);
+            strncpy(saved_pfx, tls_prefix, sizeof(saved_pfx) - 1);
             saved_pfx[sizeof(saved_pfx) - 1] = '\0';
-            strncpy(ctx->current_prefix, entry->prefix, sizeof(ctx->current_prefix) - 1);
-            ctx->current_prefix[sizeof(ctx->current_prefix) - 1] = '\0';
+            strncpy(tls_prefix, entry->prefix, sizeof(tls_prefix) - 1);
+            tls_prefix[sizeof(tls_prefix) - 1] = '\0';
         }
         if (a->lhs && a->lhs->kind == UIR_REF) {
             uir_ref_t *ref = (uir_ref_t *)a->lhs;
             int lhs_idx = -1;
-            if (ctx->current_prefix[0]) {
+            if (tls_prefix[0]) {
                 char prefixed[520];
                 snprintf(prefixed, sizeof(prefixed), "%s.%s",
-                         ctx->current_prefix, ref->name);
+                         tls_prefix, ref->name);
                 lhs_idx = find_signal_idx(ctx, prefixed);
             }
             if (lhs_idx < 0) lhs_idx = find_signal_idx(ctx, ref->name);
@@ -3700,17 +3808,17 @@ static void check_and_trigger_impl(uir_sim_context_t *ctx, uint32_t sig_idx,
         ctx->current_context_width = saved_cw;
         if (!rhs_val) {
             if (entry->prefix[0])
-                strncpy(ctx->current_prefix, saved_pfx, sizeof(ctx->current_prefix) - 1);
+                strncpy(tls_prefix, saved_pfx, sizeof(tls_prefix) - 1);
             continue;
         }
 
         if (a->lhs && a->lhs->kind == UIR_REF) {
             uir_ref_t *ref = (uir_ref_t *)a->lhs;
             int lhs_idx = -1;
-            if (ctx->current_prefix[0]) {
+            if (tls_prefix[0]) {
                 char prefixed[520];
                 snprintf(prefixed, sizeof(prefixed), "%s.%s",
-                         ctx->current_prefix, ref->name);
+                         tls_prefix, ref->name);
                 lhs_idx = find_signal_idx(ctx, prefixed);
             }
             if (lhs_idx < 0) lhs_idx = find_signal_idx(ctx, ref->name);
@@ -3869,7 +3977,7 @@ static void check_and_trigger_impl(uir_sim_context_t *ctx, uint32_t sig_idx,
         }
         qsim_bit_vector_free(rhs_val);
         if (entry->prefix[0])
-            strncpy(ctx->current_prefix, saved_pfx, sizeof(ctx->current_prefix) - 1);
+            strncpy(tls_prefix, saved_pfx, sizeof(tls_prefix) - 1);
     }
 
     /* ── Phase 1.5: UDP instance evaluation ──
@@ -3914,7 +4022,7 @@ static void check_and_trigger_impl(uir_sim_context_t *ctx, uint32_t sig_idx,
              * dangling. Re-read the current signal value. */
             new_val = ctx->signals[sig_idx].value;
             for (size_t s = 0; s < proc->sensitivity_count; s++) {
-                if (proc->sensitivity_list[s].signal != sig_node) {
+                if (!sensitivity_matches(ctx, proc, p, s, sig_idx)) {
                     continue;
                 }
 
@@ -3930,11 +4038,11 @@ static void check_and_trigger_impl(uir_sim_context_t *ctx, uint32_t sig_idx,
                         }
                     }
                     if (any_change) {
-                        strncpy(ctx->current_prefix, ctx->process_prefixes[p], 255);
-                        ctx->current_process_id = (int)p;
+                        strncpy(tls_prefix, ctx->process_prefixes[p], 255);
+                        tls_pid = (int)p;
                         exec_stmt(ctx, proc->body);
-                        ctx->current_process_id = -1;
-                        ctx->current_prefix[0] = '\0';
+                        tls_pid = -1;
+                        tls_prefix[0] = '\0';
                         break;
                     }
                 } else {
@@ -3945,11 +4053,11 @@ static void check_and_trigger_impl(uir_sim_context_t *ctx, uint32_t sig_idx,
                     if (new_val && new_val->width > 0) new_first = qsim_bit_get(new_val, 0);
 
                     if (edge_match(proc->sensitivity_list[s].edge, old_first, new_first)) {
-                        strncpy(ctx->current_prefix, ctx->process_prefixes[p], 255);
-                        ctx->current_process_id = (int)p;
+                        strncpy(tls_prefix, ctx->process_prefixes[p], 255);
+                        tls_pid = (int)p;
                         exec_stmt(ctx, proc->body);
-                        ctx->current_process_id = -1;
-                        ctx->current_prefix[0] = '\0';
+                        tls_pid = -1;
+                        tls_prefix[0] = '\0';
                         break;
                     }
                 }
@@ -4002,62 +4110,7 @@ static void check_and_trigger_impl(uir_sim_context_t *ctx, uint32_t sig_idx,
     new_val = ctx->signals[sig_idx].value;
 
     /* Propagate through port connection wires (only if values differ) */
-    for (size_t w = 0; w < ctx->port_wire_count; w++) {
-        if ((uint32_t)ctx->port_wires[w].src_sig_idx == sig_idx) {
-            uint32_t dst_idx = (uint32_t)ctx->port_wires[w].dst_sig_idx;
-            int part_lo = ctx->port_wires[w].part_lo;
-            int part_width = ctx->port_wires[w].part_width;
-            uir_port_dir_t dir = ctx->port_wires[w].dir;
-            qsim_bit_vector_t *src_val = ctx->signals[sig_idx].value;
-            qsim_bit_vector_t *dst_val = ctx->signals[dst_idx].value;
-
-            /* Determine if values differ, accounting for part-selects */
-            int differs = 0;
-            if (part_lo >= 0 && dir == UIR_PORT_IN) {
-                /* Input with part-select: compare selected parent bits vs child */
-                for (uint32_t b = 0; b < (uint32_t)part_width; b++) {
-                    qsim_value_t sv = qsim_bit_get(src_val, (uint32_t)part_lo + b);
-                    qsim_value_t dv = qsim_bit_get(dst_val, b);
-                    if (sv.state != dv.state) { differs = 1; break; }
-                }
-            } else if (part_lo >= 0 && dir == UIR_PORT_OUT) {
-                /* Output with part-select: compare child vs parent bits at offset */
-                for (uint32_t b = 0; b < (uint32_t)part_width; b++) {
-                    qsim_value_t sv = qsim_bit_get(src_val, b);
-                    qsim_value_t dv = qsim_bit_get(dst_val, (uint32_t)part_lo + b);
-                    if (sv.state != dv.state) { differs = 1; break; }
-                }
-            } else {
-                /* No part-select: full signal comparison */
-                uint32_t cmp_w = src_val->width < dst_val->width
-                    ? src_val->width : dst_val->width;
-                for (uint32_t b = 0; b < cmp_w; b++) {
-                    if (qsim_bit_get(src_val, b).state != qsim_bit_get(dst_val, b).state) {
-                        differs = 1; break;
-                    }
-                }
-            }
-
-            if (differs) {
-                qsim_bit_vector_t *val;
-                if (part_lo >= 0 && dir == UIR_PORT_IN) {
-                    /* Input: extract selected bits from parent signal */
-                    val = qsim_bit_vector_alloc((uint32_t)part_width);
-                    for (uint32_t b = 0; b < (uint32_t)part_width; b++)
-                        qsim_bit_set(val, b, qsim_bit_get(src_val, (uint32_t)part_lo + b));
-                } else if (part_lo >= 0 && dir == UIR_PORT_OUT) {
-                    /* Output: merge child value into parent at bit offset */
-                    val = qsim_bit_vector_clone(dst_val);
-                    for (uint32_t b = 0; b < (uint32_t)part_width; b++)
-                        qsim_bit_set(val, (uint32_t)part_lo + b, qsim_bit_get(src_val, b));
-                } else {
-                    val = qsim_bit_vector_clone(src_val);
-                }
-                schedule_event(ctx, ctx->current_time, ctx->current_delta,
-                               dst_idx, val, 0, -1, -1);
-            }
-        }
-    }
+    propagate_port_wires(ctx, sig_idx);
 
     /* ── Phase 4: Path delay propagation ──
      * When a signal that is a path delay source changes, schedule a
@@ -4218,10 +4271,10 @@ static void exec_assign(uir_sim_context_t *ctx, uir_assign_t *assign) {
     if (assign->lhs && assign->lhs->kind == UIR_REF) {
         uir_ref_t *ref = (uir_ref_t *)assign->lhs;
         int lhs_idx = -1;
-        if (ctx->current_prefix[0]) {
+        if (tls_prefix[0]) {
             char prefixed[520];
             snprintf(prefixed, sizeof(prefixed), "%s.%s",
-                     ctx->current_prefix, ref->name);
+                     tls_prefix, ref->name);
             lhs_idx = find_signal_idx(ctx, prefixed);
         }
         if (lhs_idx < 0) lhs_idx = find_signal_idx(ctx, ref->name);
@@ -4235,10 +4288,10 @@ static void exec_assign(uir_sim_context_t *ctx, uir_assign_t *assign) {
     if (assign->lhs && assign->lhs->kind == UIR_REF) {
         uir_ref_t *ref = (uir_ref_t *)assign->lhs;
         int lhs_idx = -1;
-        if (ctx->current_prefix[0]) {
+        if (tls_prefix[0]) {
             char prefixed[520];
             snprintf(prefixed, sizeof(prefixed), "%s.%s",
-                     ctx->current_prefix, ref->name);
+                     tls_prefix, ref->name);
             lhs_idx = find_signal_idx(ctx, prefixed);
         }
         if (lhs_idx < 0) lhs_idx = find_signal_idx(ctx, ref->name);
@@ -4952,9 +5005,9 @@ static void exec_stmt(uir_sim_context_t *ctx, uir_node_t *stmt) {
                         int scope_ok = 1;
                         if (ctx->disable_scope[0]) {
                             size_t slen = strlen(ctx->disable_scope);
-                            scope_ok = (strncmp(ctx->current_prefix, ctx->disable_scope, slen) == 0 &&
-                                       (ctx->current_prefix[slen] == '\0' ||
-                                        ctx->current_prefix[slen] == '.'));
+                            scope_ok = (strncmp(tls_prefix, ctx->disable_scope, slen) == 0 &&
+                                       (tls_prefix[slen] == '\0' ||
+                                        tls_prefix[slen] == '.'));
                         }
                         if (scope_ok) {
                             /* Cancel pending events/waiters for this (sub-)tree */
@@ -4962,9 +5015,9 @@ static void exec_stmt(uir_sim_context_t *ctx, uir_node_t *stmt) {
                             if (ctx->disable_scope[0])
                                 snprintf(target_hier, sizeof(target_hier), "%s.%s",
                                          ctx->disable_scope, ctx->disable_block_name);
-                            else if (ctx->current_prefix[0])
+                            else if (tls_prefix[0])
                                 snprintf(target_hier, sizeof(target_hier), "%s.%s",
-                                         ctx->current_prefix, ctx->disable_block_name);
+                                         tls_prefix, ctx->disable_block_name);
                             else
                                 snprintf(target_hier, sizeof(target_hier), "%s",
                                          ctx->disable_block_name);
@@ -5178,7 +5231,7 @@ static void exec_stmt(uir_sim_context_t *ctx, uir_node_t *stmt) {
             uir_func_t *ft = frame->def;
 
             char saved_prefix[256] = "";
-            strncpy(saved_prefix, ctx->current_prefix, sizeof(saved_prefix) - 1);
+            strncpy(saved_prefix, tls_prefix, sizeof(saved_prefix) - 1);
 
             /* Save automatic frame state and re-initialize to X */
             qsim_bit_vector_t **auto_saved = NULL;
@@ -5218,7 +5271,7 @@ static void exec_stmt(uir_sim_context_t *ctx, uir_node_t *stmt) {
             }
 
             /* Set task prefix and execute body */
-            strncpy(ctx->current_prefix, frame->prefix, sizeof(ctx->current_prefix) - 1);
+            strncpy(tls_prefix, frame->prefix, sizeof(tls_prefix) - 1);
             exec_stmt(ctx, ft->body);
 
             /* Restore automatic frame state */
@@ -5234,7 +5287,7 @@ static void exec_stmt(uir_sim_context_t *ctx, uir_node_t *stmt) {
             }
 
             /* Restore prefix */
-            strncpy(ctx->current_prefix, saved_prefix, sizeof(ctx->current_prefix) - 1);
+            strncpy(tls_prefix, saved_prefix, sizeof(tls_prefix) - 1);
 
             /* Write back output/inout args */
             for (size_t i = 0; i < arg_count; i++) {
@@ -5342,9 +5395,9 @@ static void exec_stmt(uir_sim_context_t *ctx, uir_node_t *stmt) {
             if (ctx->disable_scope[0])
                 snprintf(target_hier, sizeof(target_hier), "%s.%s",
                          ctx->disable_scope, ctx->disable_block_name);
-            else if (ctx->current_prefix[0])
+            else if (tls_prefix[0])
                 snprintf(target_hier, sizeof(target_hier), "%s.%s",
-                         ctx->current_prefix, ctx->disable_block_name);
+                         tls_prefix, ctx->disable_block_name);
             else
                 snprintf(target_hier, sizeof(target_hier), "%s",
                          ctx->disable_block_name);
@@ -5445,7 +5498,7 @@ uir_sim_context_t *uir_sim_create(uir_design_unit_t **units, size_t count) {
     ctx->thread_count = 1;  /* default: single-threaded */
     sim_mutex_init(&ctx->pool_mutex);
     ctx->rand_state = 1;    /* non-zero seed for $random */
-    ctx->current_process_id = -1;
+    tls_pid = -1;
     ctx->max_deltas_per_time = 10000;  /* safety limit for combinatorial loop detection */
 
     /* Determine which units are instantiated by other units (non-top-level).
@@ -5517,10 +5570,10 @@ uir_sim_context_t *uir_sim_create(uir_design_unit_t **units, size_t count) {
         /* Set prefix for scoped signal lookup inside submodule processes */
         char saved_prefix[520] = "";
         if (ctx->process_prefixes[p][0]) {
-            strncpy(saved_prefix, ctx->current_prefix, sizeof(saved_prefix) - 1);
+            strncpy(saved_prefix, tls_prefix, sizeof(saved_prefix) - 1);
             saved_prefix[sizeof(saved_prefix) - 1] = '\0';
-            strncpy(ctx->current_prefix, ctx->process_prefixes[p], sizeof(ctx->current_prefix) - 1);
-            ctx->current_prefix[sizeof(ctx->current_prefix) - 1] = '\0';
+            strncpy(tls_prefix, ctx->process_prefixes[p], sizeof(tls_prefix) - 1);
+            tls_prefix[sizeof(tls_prefix) - 1] = '\0';
         }
 
         int *ref_sigs = NULL;
@@ -5528,8 +5581,8 @@ uir_sim_context_t *uir_sim_create(uir_design_unit_t **units, size_t count) {
         find_refs_in_node(proc->body, ctx, &ref_sigs, &ref_count, &ref_cap);
 
         if (ctx->process_prefixes[p][0]) {
-            strncpy(ctx->current_prefix, saved_prefix, sizeof(ctx->current_prefix) - 1);
-            ctx->current_prefix[sizeof(ctx->current_prefix) - 1] = '\0';
+            strncpy(tls_prefix, saved_prefix, sizeof(tls_prefix) - 1);
+            tls_prefix[sizeof(tls_prefix) - 1] = '\0';
         }
 
         if (ref_count > 0) {
@@ -6126,11 +6179,11 @@ static void initial_eval(uir_sim_context_t *ctx) {
         for (size_t p = 0; p < ctx->process_count; p++) {
             uir_process_t *proc = ctx->processes[p];
             if (proc->body) {
-                strncpy(ctx->current_prefix, ctx->process_prefixes[p], 255);
-                ctx->current_process_id = (int)p;
+                strncpy(tls_prefix, ctx->process_prefixes[p], 255);
+                tls_pid = (int)p;
                 exec_stmt(ctx, proc->body);
-                ctx->current_process_id = -1;
-                ctx->current_prefix[0] = '\0';
+                tls_pid = -1;
+                tls_prefix[0] = '\0';
             }
         }
 
@@ -6171,18 +6224,18 @@ static void initial_eval(uir_sim_context_t *ctx) {
         uint32_t saved_cw = ctx->current_context_width;
         char saved_pfx[520] = "";
         if (entry->prefix[0]) {
-            strncpy(saved_pfx, ctx->current_prefix, sizeof(saved_pfx) - 1);
+            strncpy(saved_pfx, tls_prefix, sizeof(saved_pfx) - 1);
             saved_pfx[sizeof(saved_pfx) - 1] = '\0';
-            strncpy(ctx->current_prefix, entry->prefix, sizeof(ctx->current_prefix) - 1);
-            ctx->current_prefix[sizeof(ctx->current_prefix) - 1] = '\0';
+            strncpy(tls_prefix, entry->prefix, sizeof(tls_prefix) - 1);
+            tls_prefix[sizeof(tls_prefix) - 1] = '\0';
         }
         if (a->lhs && a->lhs->kind == UIR_REF) {
             uir_ref_t *ref = (uir_ref_t *)a->lhs;
             int lhs_idx = -1;
-            if (ctx->current_prefix[0]) {
+            if (tls_prefix[0]) {
                 char prefixed[520];
                 snprintf(prefixed, sizeof(prefixed), "%s.%s",
-                         ctx->current_prefix, ref->name);
+                         tls_prefix, ref->name);
                 lhs_idx = find_signal_idx(ctx, prefixed);
             }
             if (lhs_idx < 0) lhs_idx = find_signal_idx(ctx, ref->name);
@@ -6194,16 +6247,16 @@ static void initial_eval(uir_sim_context_t *ctx) {
         ctx->current_context_width = saved_cw;
         if (!rhs_val) {
             if (entry->prefix[0])
-                strncpy(ctx->current_prefix, saved_pfx, sizeof(ctx->current_prefix) - 1);
+                strncpy(tls_prefix, saved_pfx, sizeof(tls_prefix) - 1);
             continue;
         }
         if (a->lhs && a->lhs->kind == UIR_REF) {
             uir_ref_t *ref = (uir_ref_t *)a->lhs;
             int lidx = -1;
-            if (ctx->current_prefix[0]) {
+            if (tls_prefix[0]) {
                 char prefixed[520];
                 snprintf(prefixed, sizeof(prefixed), "%s.%s",
-                         ctx->current_prefix, ref->name);
+                         tls_prefix, ref->name);
                 lidx = find_signal_idx(ctx, prefixed);
             }
             if (lidx < 0) lidx = find_signal_idx(ctx, ref->name);
@@ -6311,7 +6364,7 @@ static void initial_eval(uir_sim_context_t *ctx) {
             }
         }
         if (entry->prefix[0])
-            strncpy(ctx->current_prefix, saved_pfx, sizeof(ctx->current_prefix) - 1);
+            strncpy(tls_prefix, saved_pfx, sizeof(tls_prefix) - 1);
         qsim_bit_vector_free(rhs_val);
     }
 
@@ -6639,10 +6692,10 @@ static qsim_bit_vector_t *eval_vhdl_builtin_func(
             uir_ref_t *ref = (uir_ref_t *)fc->args[0];
             int sig_idx = -1;
             sig_name = ref->name;
-            if (ctx->current_prefix[0]) {
+            if (tls_prefix[0]) {
                 char prefixed[520];
                 snprintf(prefixed, sizeof(prefixed), "%s.%s",
-                         ctx->current_prefix, ref->name);
+                         tls_prefix, ref->name);
                 sig_idx = find_signal_idx(ctx, prefixed);
             }
             if (sig_idx < 0) sig_idx = find_signal_idx(ctx, ref->name);
@@ -6840,18 +6893,18 @@ static void ca_eval_for_thread(uir_sim_context_t *ctx, sim_thread_state_t *ts,
         uint32_t saved_cw = ctx->current_context_width;
         char saved_pfx[520] = "";
         if (entry->prefix[0]) {
-            strncpy(saved_pfx, ctx->current_prefix, sizeof(saved_pfx) - 1);
+            strncpy(saved_pfx, tls_prefix, sizeof(saved_pfx) - 1);
             saved_pfx[sizeof(saved_pfx) - 1] = '\0';
-            strncpy(ctx->current_prefix, entry->prefix, sizeof(ctx->current_prefix) - 1);
-            ctx->current_prefix[sizeof(ctx->current_prefix) - 1] = '\0';
+            strncpy(tls_prefix, entry->prefix, sizeof(tls_prefix) - 1);
+            tls_prefix[sizeof(tls_prefix) - 1] = '\0';
         }
         if (a->lhs && a->lhs->kind == UIR_REF) {
             uir_ref_t *ref = (uir_ref_t *)a->lhs;
             int lhs_idx = -1;
-            if (ctx->current_prefix[0]) {
+            if (tls_prefix[0]) {
                 char prefixed[520];
                 snprintf(prefixed, sizeof(prefixed), "%s.%s",
-                         ctx->current_prefix, ref->name);
+                         tls_prefix, ref->name);
                 lhs_idx = find_signal_idx(ctx, prefixed);
             }
             if (lhs_idx < 0) lhs_idx = find_signal_idx(ctx, ref->name);
@@ -6862,17 +6915,17 @@ static void ca_eval_for_thread(uir_sim_context_t *ctx, sim_thread_state_t *ts,
         ctx->current_context_width = saved_cw;
         if (!rhs_val) {
             if (entry->prefix[0])
-                strncpy(ctx->current_prefix, saved_pfx, sizeof(ctx->current_prefix) - 1);
+                strncpy(tls_prefix, saved_pfx, sizeof(tls_prefix) - 1);
             continue;
         }
 
         if (a->lhs && a->lhs->kind == UIR_REF) {
             uir_ref_t *ref = (uir_ref_t *)a->lhs;
             int lhs_idx = -1;
-            if (ctx->current_prefix[0]) {
+            if (tls_prefix[0]) {
                 char prefixed[520];
                 snprintf(prefixed, sizeof(prefixed), "%s.%s",
-                         ctx->current_prefix, ref->name);
+                         tls_prefix, ref->name);
                 lhs_idx = find_signal_idx(ctx, prefixed);
             }
             if (lhs_idx < 0) lhs_idx = find_signal_idx(ctx, ref->name);
@@ -6971,7 +7024,7 @@ static void ca_eval_for_thread(uir_sim_context_t *ctx, sim_thread_state_t *ts,
         }
         qsim_bit_vector_free(rhs_val);
         if (entry->prefix[0])
-            strncpy(ctx->current_prefix, saved_pfx, sizeof(ctx->current_prefix) - 1);
+            strncpy(tls_prefix, saved_pfx, sizeof(tls_prefix) - 1);
     }
 }
 
@@ -7002,14 +7055,13 @@ static void process_partition_triggers(uir_sim_context_t *ctx, sim_thread_state_
     for (size_t ci = 0; ci < ts->change_count; ci++) {
         int sig_idx = ts->changes[ci].sig_idx;
         if (sig_idx < 0) continue;
-        uir_node_t *sig_node = ctx->signals[sig_idx].node;
-        if (!sig_node) continue;
+        if (!ctx->signals[sig_idx].node) continue;
 
         for (size_t pi = 0; pi < ts->proc_count; pi++) {
             uir_process_t *proc = ctx->processes[ts->proc_indices[pi]];
             if (!proc) continue;
             for (size_t s = 0; s < proc->sensitivity_count; s++) {
-                if (proc->sensitivity_list[s].signal != sig_node) continue;
+                if (!sensitivity_matches(ctx, proc, ts->proc_indices[pi], s, (uint32_t)sig_idx)) continue;
                 /* Edge/level check (same as check_and_trigger_impl) */
                 int edge = proc->sensitivity_list[s].edge;
                 int should_trigger = 0;
@@ -7026,13 +7078,13 @@ static void process_partition_triggers(uir_sim_context_t *ctx, sim_thread_state_
                         should_trigger = (old_st != QSIM_0 && new_st == QSIM_0);
                 }
                 if (should_trigger) {
-                    strncpy(ctx->current_prefix, ctx->process_prefixes[ts->proc_indices[pi]],
-                            sizeof(ctx->current_prefix) - 1);
-                    ctx->current_prefix[sizeof(ctx->current_prefix) - 1] = '\0';
-                    ctx->current_process_id = (int)ts->proc_indices[pi];
+                    strncpy(tls_prefix, ctx->process_prefixes[ts->proc_indices[pi]],
+                            sizeof(tls_prefix) - 1);
+                    tls_prefix[sizeof(tls_prefix) - 1] = '\0';
+                    tls_pid = (int)ts->proc_indices[pi];
                     exec_stmt(ctx, proc->body);
-                    ctx->current_process_id = -1;
-                    ctx->current_prefix[0] = '\0';
+                    tls_pid = -1;
+                    tls_prefix[0] = '\0';
                 }
                 break; /* one trigger per signal per process */
             }
@@ -7097,8 +7149,14 @@ static void *worker_main(void *arg) {
             process_partition_triggers(ctx, ts);
             break;
         default:
-            break;
+            break; /* PHASE_CA (3): worker has no CA work */
         }
+        /* Join barrier: the leader waits here (its second barrier per phase)
+         * before freeing batch events / advancing to the next phase. Without
+         * this wait, the leader can memset-free the batch events (pool_free_
+         * event_thread) while the worker is still applying them, producing
+         * NULL-valued events and a crash in signal_write_resolved. */
+        sim_barrier_wait(&ctx->phase_barrier);
     }
     return NULL;
 }
@@ -7553,19 +7611,28 @@ int uir_sim_run(uir_sim_context_t *ctx, uint64_t duration) {
                         qsim_bit_vector_t *_old = NULL;
                         if (signal_write_resolved(ctx, _ev->sig_idx, _ev->value, &_old, -1)) {
                             if (ctx->thread_count > 1) {
-                                size_t _cc = ctx->threads[0].change_count;
-                                size_t _cp = ctx->threads[0].change_cap;
+                                /* Route the change to the thread owning the
+                                 * signal's partition: phase 2b triggers only
+                                 * processes in the owner's partition, so
+                                 * instance-port changes (u1.clk etc.) must go
+                                 * to thread 1 when the signal is in
+                                 * partition 1, not always to thread 0. */
+                                int _pw_owner = 0;
+                                if (ctx->signal_partition)
+                                    _pw_owner = ctx->signal_partition[_ev->sig_idx] % ctx->thread_count;
+                                size_t _cc = ctx->threads[_pw_owner].change_count;
+                                size_t _cp = ctx->threads[_pw_owner].change_cap;
                                 if (_cc >= _cp) {
                                     size_t _nc = _cp ? _cp * 2 : 64;
-                                    signal_change_t *_n = realloc(ctx->threads[0].changes,
+                                    signal_change_t *_n = realloc(ctx->threads[_pw_owner].changes,
                                         _nc * sizeof(signal_change_t));
                                     if (!_n) { qsim_bit_vector_free(_old); pool_free_event(ctx, _ev); break; }
-                                    ctx->threads[0].changes = _n;
-                                    ctx->threads[0].change_cap = _nc;
+                                    ctx->threads[_pw_owner].changes = _n;
+                                    ctx->threads[_pw_owner].change_cap = _nc;
                                 }
-                                ctx->threads[0].changes[_cc].sig_idx = (int)_ev->sig_idx;
-                                ctx->threads[0].changes[_cc].old_val = _old;
-                                ctx->threads[0].change_count++;
+                                ctx->threads[_pw_owner].changes[_cc].sig_idx = (int)_ev->sig_idx;
+                                ctx->threads[_pw_owner].changes[_cc].old_val = _old;
+                                ctx->threads[_pw_owner].change_count++;
                             } else {
                                 if (change_count >= change_cap) {
                                     size_t _nc = change_cap ? change_cap * 2 : 64;
@@ -7612,7 +7679,10 @@ int uir_sim_run(uir_sim_context_t *ctx, uint64_t duration) {
             /* Merge per-thread pending events into global queue */
             merge_thread_pending_events(ctx);
 
-            /* Phase 2c: Check waiters and free per-thread changes (serial) */
+            /* Phase 2c: Check waiters, propagate port wires, and free per-thread
+             * changes (serial). Port-wire propagation (esp. output child->parent)
+             * is required for designs with instance output ports; the serial path
+             * does it inside check_and_trigger_impl, the parallel path only here. */
             for (int ti = 0; ti < ctx->thread_count; ti++) {
                 for (size_t ci = 0; ci < ctx->threads[ti].change_count; ci++) {
                     int sig_idx = ctx->threads[ti].changes[ci].sig_idx;
@@ -7620,6 +7690,7 @@ int uir_sim_run(uir_sim_context_t *ctx, uint64_t duration) {
                     check_waiters_on_change(ctx, (uint32_t)sig_idx,
                                             ctx->threads[ti].changes[ci].old_val,
                                             ctx->signals[sig_idx].value);
+                    propagate_port_wires(ctx, (uint32_t)sig_idx);
                     qsim_bit_vector_free(ctx->threads[ti].changes[ci].old_val);
                 }
                 free(ctx->threads[ti].changes);

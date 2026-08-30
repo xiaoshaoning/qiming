@@ -222,9 +222,10 @@ if(BUILD_TESTING)
     target_link_libraries(test_replicate_twoblk PRIVATE qsim)
     add_test(NAME test_replicate_twoblk COMMAND test_replicate_twoblk)
 
-    # Benchmark harness; NOT wired into ctest: the multi-partition parallel
-    # engine has known bugs (see docs/review_plan.md NOTE).
+    # Benchmark harness: multi-threaded delta evaluation + bit-identical
+    # cross-thread comparisons (parallel engine regression coverage).
     add_executable(run_perf_tests tests/run_perf_tests.c)
     target_link_libraries(run_perf_tests PRIVATE qsim)
+    add_test(NAME run_perf_tests COMMAND run_perf_tests)
 
 endif()

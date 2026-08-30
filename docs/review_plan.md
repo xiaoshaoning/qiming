@@ -17,7 +17,7 @@ checklist green.
 | P2-14 | Medium | `build.rs` configures the same `libqsim/build` dir with `BUILD_TESTING=OFF`, fighting manual cmake runs and triggering cache wipes — **✅ LANDED: private `build-cargo/` dir** |
 | P3-15 | Low | Cosmetic: stale comments, stale program name, unneeded crate-types, open TODO — **✅ LANDED** |
 | NOTE | — | Local MSYS2 `ld` segfaults on its own `crt2.o` — environment, not repo code |
-| NOTE | — | Parallel engine bugs found during P1-11 (crash, cross-sensitivity, delta storm) — tracked, out of scope |
+| NOTE | — | Parallel engine bugs found during P1-11 — **✅ FIXED** (sensitivity scoping, partition assignment, barrier race, output-port propagation, prefix race); run_perf_tests wired into ctest |
 
 ---
 
@@ -198,37 +198,46 @@ fine without `crt2.o`; the C suite is green in CI on MSVC and Linux GCC. No code
 change is planned. Workaround: build/test with the MSVC toolchain (as CI does) or
 repair/reinstall the MSYS2 ucrt64 binutils. Do not chase this as a repo bug.
 
-## NOTE — parallel engine bugs found during P1-11 (out of scope, tracked here)
+## NOTE — parallel engine bugs found during P1-11 → **FIXED**
 
 While validating the standalone suites, `run_perf_tests` exposed pre-existing
 bugs in the **multi-partition parallel delta engine** (`libqsim/src/uir_sim.c`).
-It is NOT wired into ctest until these are fixed. All reproduced under MSVC with
-the 8-counter `mwcc` design (independent WCCs → multiple partitions):
+All reproduced under MSVC with the 8-counter `mwcc` design (independent WCCs →
+multiple partitions). **All three are fixed and `run_perf_tests` is now wired
+into ctest (20/20 suites pass, qsim_test 606/606, deterministic across runs).**
 
-1. **Deterministic crash (2 threads):** the leader does TWO barriers per phase
-   (start + join) but `worker_main` does ONE per iteration, so workers re-process
-   each phase. The leader's phase-1 `pool_free_event_thread` (which memsets the
-   event to zeros) races the worker's second `process_events_apply`, producing
-   events with `sig=0, value=NULL` → crash in `signal_write_resolved`.
-   Adding a join barrier to `worker_main` fixes the crash but breaks
-   `test_perf_parallel_sweep`'s 2T speedup assertion (605/606) and changes
-   multi-partition results — the barrier contract and the phase flow need a
-   coherent redesign, not a one-line fix.
-2. **Cross-process sensitivity (parser/elaboration):** all 8 instances' always
-   blocks resolve `clk`/`rst` to the SAME signal nodes
-   (`proc->sensitivity_list[s].signal` identical across processes), so every
-   process triggers on one signal's change. `elaboration.c resolve_sensitivity`
-   is an empty stub. Masked in the serial path and in single-WCC designs because
-   all stimulus changes together; breaks multi-instance designs with independent
-   inputs.
-3. **Delta storm (multi-partition, post-fix only):** with the join-barrier fix,
-   events for unchanged top-level inputs keep getting re-scheduled every delta
-   (t=0, d climbing to 5+ until the combi-loop guard fires), so NBAs never
-   settle and `val` stays X. Root cause not isolated.
+1. **Cross-process sensitivity (parser/elaboration):** all instances' always
+   blocks resolved `clk`/`rst` to the SAME signal nodes, so every process
+   triggered on one signal's change. Processes are shared across instances
+   (same `uir_process_t*`, per-instance prefix) and `collect_signals` aliases
+   the module node under every instance path, so node-pointer identity cannot
+   distinguish per-instance signals.
+   **Fix:** sensitivity is matched by name under the process's hierarchical
+   prefix (`sensitivity_matches`/`sensitivity_signal_idx`); both the serial
+   and parallel trigger paths use it.
+2. **Processes all mapped to partition 0:** the process-partition assignment
+   resolved sensitivity by module-local name without the instance prefix,
+   putting every process on thread 0. **Fix:** prefix-aware resolution.
+3. **Crash (2 threads):** the leader does TWO barriers per phase (start+join)
+   but `worker_main` did ONE per iteration, so workers re-processed each phase
+   and the leader's `pool_free_event_thread` (memset) raced the worker's second
+   apply, producing NULL-valued events. **Fix:** worker now waits at the join
+   barrier after each phase (two barriers per iteration, matching the leader).
+4. **Instance output-port changes never propagated (parallel path):** the
+   parallel engine never ran check_and_trigger_impl's port-wire propagation, so
+   `u0.val -> val_0` writes were lost (val stayed X). **Fix:** extracted
+   `propagate_port_wires()` (serial + parallel Phase 2c per-change).
+5. **Racy prefix/pid during parallel Phase 2b:** `ctx->current_prefix` and
+   `ctx->current_process_id` were shared context fields written by both
+   threads concurrently; a worker's exec could resolve refs under the leader's
+   prefix, writing the wrong signal (nondeterministic X values). **Fix:**
+   thread-local `tls_prefix`/`tls_pid`.
+6. **Phase 1.5 change routing:** propagated input-port changes were appended
+   to thread 0's change list regardless of partition, so thread 1's processes
+   never saw their instance clocks. **Fix:** route by partition owner.
 
-**Suggested fix order when tackled:** (2) first (sensitivity scoping — smallest,
-unblocks correct multi-instance behavior), then (1) the barrier contract,
-then re-validate (3).
+**Result:** multi-partition parallel simulation is correct AND fast (mwcc
+sweep: 2T 8.8x / 4T 17x vs 1T; previously 0.2x or crashed).
 
 ---
 
