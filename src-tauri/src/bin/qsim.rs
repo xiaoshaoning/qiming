@@ -183,6 +183,13 @@ fn cmd_simulate(args: &[String]) -> Result<(), String> {
         }
     }
 
+    // Print any $display/$monitor output accumulated during simulation.
+    if let Some(log) = session.get_log() {
+        if !log.trim().is_empty() {
+            println!("{}", log);
+        }
+    }
+
     println!("Wave entries: {}", session.wave_count());
 
     drop(session);
@@ -412,6 +419,13 @@ fn cmd_run(args: &[String]) -> Result<(), String> {
     if !halted {
         println!();
         println!("Reached cycle limit ({}) without halting", max_cycles);
+    }
+
+    // Print any $display output from the design/testbench.
+    if let Some(log) = session.get_log() {
+        if !log.trim().is_empty() {
+            println!("{}", log);
+        }
     }
 
     println!("Wave entries: {}", session.wave_count());

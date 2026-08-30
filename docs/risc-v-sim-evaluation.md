@@ -182,6 +182,10 @@ support (`qsim_scheduler_run(until_time)` `scheduler.c:309`,
 
 ## 9. CLI never prints the `$display` log
 
+**FIXED** — `cmd_simulate` and `cmd_run` now print `session.get_log()` after
+stepping (the doc's repro `sum=10 / sum2=10` now prints from the CLI).
+Remaining: `%0d`-style format flags (#10) still print literally.
+
 `$display` output is routed to a callback → accumulated log
 (`session.get_log()` at `session/mod.rs:333`), but `cmd_simulate`
 (`bin/qsim.rs:91`) only prints signal dumps. Add
