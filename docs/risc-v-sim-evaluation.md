@@ -142,7 +142,7 @@ Workaround meanwhile: move inits into `initial` blocks.
 
 ---
 
-## 6. No hierarchical references (`dut.x`, `$readmemh("f", dut.mem)`)
+## 6. No hierarchical references (`dut.x`, `$readmemh("f", dut.mem)`)  **FIXED** (`a7be8dc`)
 
 The grammar has no hierarchical paths; all our tbs reference `dut.*`
 internals and load memories via `$readmemh(file, dut.imem)`.
