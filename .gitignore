@@ -79,3 +79,4 @@ release
 python/src/*.egg-info/
 test_export.fsdb
 docs/fpga_gpu_asic_architecture.md
+*.obj
