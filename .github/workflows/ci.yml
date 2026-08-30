@@ -263,3 +263,13 @@ jobs:
           else
             python3 -c "import json,sys;c=json.load(open(sys.argv[1]));b=json.load(open(sys.argv[2]));r=float(c['steps_per_sec'])/float(b['steps_per_sec']);print(f'Baseline: {float(b[\"steps_per_sec\"]):.0f} steps/sec');print(f'Current:  {float(c[\"steps_per_sec\"]):.0f} steps/sec');print(f'Ratio:    {r:.3f}');sys.exit(0 if r>=0.9 else 1)" "$RESULT" "$BASELINE"
           fi
+
+      # The first main-branch run creates docs/bench_baseline_linux.json in the
+      # runner workspace; upload it so it can be downloaded and committed.
+      - name: Upload baseline
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-baseline-linux
+          path: docs/bench_baseline_linux.json
+          if-no-files-found: ignore
