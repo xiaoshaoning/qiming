@@ -14,7 +14,7 @@ checklist green.
 | P1-11 | High | ~28 standalone test executables are built by CMake but **never run** (only `qsim_test` was registered with ctest; CI ran `-R qsim_test`) — **✅ LANDED: 13 suites wired, 14/14 ctest pass, CI filters removed** |
 | P1-12 | High | Several suites exit `0` even when checks fail — **partial: `test_npu_bugs` fixed; smoke suites deferred to P2-13** |
 | P2-13 | Medium | Scratch/debug files committed and built — **✅ LANDED: 14 deleted, 5 regression suites salvaged + wired (19/19 ctest)** |
-| P2-14 | Medium | `build.rs` configures the same `libqsim/build` dir with `BUILD_TESTING=OFF`, fighting manual cmake runs and triggering cache wipes |
+| P2-14 | Medium | `build.rs` configures the same `libqsim/build` dir with `BUILD_TESTING=OFF`, fighting manual cmake runs and triggering cache wipes — **✅ LANDED: private `build-cargo/` dir** |
 | P3-15 | Low | Cosmetic: stale comments, stale program name, unneeded crate-types, open TODO |
 | NOTE | — | Local MSYS2 `ld` segfaults on its own `crt2.o` — environment, not repo code |
 | NOTE | — | Parallel engine bugs found during P1-11 (crash, cross-sensitivity, delta storm) — tracked, out of scope |
@@ -146,33 +146,29 @@ unique regression coverage):*
 
 ## P2-14 — build.rs shares the libqsim build dir with manual cmake
 
-> **STATUS: ☐ OPEN**
+> **STATUS: ✅ LANDED**
 
-**Problem.** `src-tauri/build.rs` configures `libqsim/build` with
-`-DBUILD_TESTING=OFF` on every `cargo build`. A developer who runs
-`cmake -B build -DBUILD_TESTING=ON` for ctest gets that dir reconfigured behind
-their back, and any stale `CMakeCache.txt` (e.g. from WSL) triggers a full
+**Problem.** `src-tauri/build.rs` configured `libqsim/build` with
+`-DBUILD_TESTING=OFF` on every `cargo build`. A developer who ran
+`cmake -B build -DBUILD_TESTING=ON` for ctest got that dir reconfigured behind
+their back, and any stale `CMakeCache.txt` (e.g. from WSL) triggered a full
 `remove_dir_all` + reconfigure wipe of a dir the developer may be using.
 
-**Evidence.**
-- `src-tauri/build.rs`: `cmake -B <libqsim>/build -S <libqsim> -DBUILD_TESTING=OFF`
-- Wipe-and-retry block wipes the same shared dir.
-
-**Fix applied.** *(proposed)*
-- Point the cargo-driven build at a private dir: `libqsim/build-cargo`
-  (gitignored). `build.rs` configures/builds there; manual cmake keeps using
-  `libqsim/build`. Add `build-cargo/` to `.gitignore`.
+**Fix applied.**
+- `src-tauri/build.rs`: cargo-driven CMake now uses a private
+  `libqsim/build-cargo` dir; the wipe-on-stale-cache retry applies only to it.
+- `.gitignore`: added `build-cargo/` (next to `build/`).
 
 **Verification.**
-- [ ] `cargo build` succeeds with `build-cargo/` used
-- [ ] Manual `cmake -B build -DBUILD_TESTING=ON` + ctest unaffected by subsequent
-      `cargo build`
-- [ ] `git status` clean (build-cargo ignored)
+- [x] `cargo check` succeeds and creates `libqsim/build-cargo` (BUILD_TESTING=OFF)
+- [x] Developer's `libqsim/build` (BUILD_TESTING=ON) left untouched by the cargo build
+- [x] `git check-ignore libqsim/build-cargo` → ignored; `git status` clean
 
 **Checklist.**
-- [ ] build.rs uses a separate build dir
-- [ ] `.gitignore` updated
-- [ ] No behavioral change to packaged builds
+- [x] build.rs uses a separate build dir
+- [x] `.gitignore` updated
+- [x] No behavioral change to packaged builds (`beforeBuildCommand` untouched)
+
 
 ---
 

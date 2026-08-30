@@ -1,6 +1,7 @@
 # Build artifacts
 target/
 build/
+build-cargo/
 dist/
 *.o
 *.so

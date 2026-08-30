@@ -21,13 +21,17 @@ fn main()
 
     tauri_build::build();
 
-    // Build libqsim C library via CMake
+    // Build libqsim C library via CMake in a PRIVATE directory
+    // (build-cargo). The shared libqsim/build dir is left for manual
+    // cmake/ctest use with BUILD_TESTING=ON; using the same dir here
+    // would reconfigure it to BUILD_TESTING=OFF behind the developer
+    // and wipe it on stale-cache retry.
     let libqsim_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .unwrap()
         .join("libqsim");
 
-    let build_dir = libqsim_dir.join("build");
+    let build_dir = libqsim_dir.join("build-cargo");
 
     // Run CMake configure. A stale CMakeCache.txt from a different source path
     // (e.g. one created inside WSL for the same checkout) makes cmake refuse to
