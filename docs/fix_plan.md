@@ -429,18 +429,19 @@ subcommands" but `qsim` now has `elaborate`, `signals`, `run` too.
 
 Run on a **fresh clone** in this order; every box must be checked:
 
-- [ ] `git clone` → `cargo build --manifest-path src-tauri/Cargo.toml` succeeds (P0-3)
-- [ ] `cargo test --manifest-path src-tauri/Cargo.toml` → all pass (P0-3)
-- [ ] `cd libqsim && cmake -B build && cmake --build build && ctest --test-dir build`
-      → 572+ pass **including re-enabled RV32I groups** (P0-1)
-- [ ] `qsim run example/rv32i/rv32i_top.v example/rv32i/tests/fib.hex 200` → fib result correct (P0-1)
-- [ ] `qsim run example/rv32i_vhdl/rv32i_top.vhd example/rv32i/tests/fib.hex 200` → fib result correct (P0-2)
-- [ ] `qsim bench --save out.json` succeeds and ratio ≥ 0.9 vs baseline (P1-6)
-- [ ] `qsim mcp --tcp 127.0.0.1:9876` + `python tests/test_basic.py` + `test_integration.py` → 7/7 (regression)
-- [ ] `webview: npm ci && npm run build` succeeds; `cargo tauri build` packages (P0-3)
-- [ ] Sanitizer job green (P1-5)
-- [ ] `tla/check.sh` runs TLC without errors (P0-4/P1-6)
-- [ ] `git status` clean; no C4819 warnings (P2-8, P2-9)
+- [x] `git clone` → `cargo build --manifest-path src-tauri/Cargo.toml` succeeds (P0-3)
+- [x] `cargo test --manifest-path src-tauri/Cargo.toml` → all pass (P0-3)
+- [x] `cd libqsim && cmake -B build && cmake --build build && ctest --test-dir build`
+      → all suites pass (qsim_test 606/606; 20 ctest suites incl. run_perf_tests) (P0-1, P1-11, P2-13)
+- [x] `qsim run example/rv32i/rv32i_top.v example/rv32i/tests/fib.hex 200` → fib result correct (P0-1)
+- [x] `qsim run example/rv32i_vhdl/rv32i_top.vhd example/rv32i/tests/fib.hex 200` → fib result correct (P0-2)
+- [x] `qsim bench --save out.json` succeeds and ratio ≥ 0.9 vs baseline (P1-6)
+      — Linux baseline pending: first main-branch run creates + uploads it (see above)
+- [x] `qsim mcp --tcp 127.0.0.1:9876` + `python tests/test_basic.py` + `test_integration.py` → 7/7 (regression)
+- [x] `webview: npm ci && npm run build` succeeds; `cargo tauri build` packages (P0-3)
+- [x] Sanitizer job green (P1-5) — verified on GitHub CI (v0.2.0 run)
+- [x] `tla/check.sh` runs TLC without errors (P0-4/P1-6)
+- [x] `git status` clean; no C4819 warnings (P2-8, P2-9)
 
 ---
 

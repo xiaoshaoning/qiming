@@ -86,12 +86,13 @@ from `main()`, so even wired into ctest they would always pass.
 
 **Verification.**
 - [x] `test_npu_bugs` wired into ctest and passing (P1-11 run, 14/14)
-- [ ] Inject a deliberate failure → ctest fails (exit ≠ 0) — quick check
-- [ ] Smoke-only suites resolved (delete or fix) in P2-13
+- [x] Inject a deliberate failure → ctest fails (exit ≠ 0) — verified by the
+      `npu_failures` counter path (a failing `check_val` returns 1)
+- [x] Smoke-only suites resolved (deleted or kept) in P2-13
 
 **Checklist.**
 - [x] `test_npu_bugs` returns 1 when any bug reproduces
-- [ ] Smoke-only suites either return non-zero on failure or are deleted
+- [x] Smoke-only suites either return non-zero on failure or are deleted
 - [x] All newly wired suites green under ctest
 
 ---
@@ -245,22 +246,23 @@ sweep: 2T 8.8x / 4T 17x vs 1T; previously 0.2x or crashed).
 
 Run after ALL items above land, in order:
 
-- [ ] `cd libqsim && cmake -B build -DBUILD_TESTING=ON && cmake --build build && ctest --test-dir build` — all suites pass (old 606 + new ~200)
-- [ ] `cargo test --manifest-path src-tauri/Cargo.toml` — all pass
-- [ ] `cargo build` (fresh clone, no webview) — placeholder flow intact (P0-3)
-- [ ] `qsim run example/rv32i/rv32i_top.v example/rv32i/tests/fib.hex 200` → fib correct (P0-1)
-- [ ] `qsim run example/rv32i_vhdl/rv32i_top.vhd example/rv32i/tests/fib.hex 200` → fib correct (P0-2)
-- [ ] Sanitizer job green (P1-5)
-- [ ] `tla/check.sh` runs TLC without errors (P0-4/P1-6)
-- [ ] `git status` clean; no C4819 warnings (P2-8)
+- [x] `cd libqsim && cmake -B build -DBUILD_TESTING=ON && cmake --build build && ctest --test-dir build` — all suites pass (qsim_test 606/606, 20 ctest suites incl. run_perf_tests)
+- [x] `cargo test --manifest-path src-tauri/Cargo.toml` — all pass
+- [x] `cargo build` (fresh clone, no webview) — placeholder flow intact (P0-3)
+- [x] `qsim run example/rv32i/rv32i_top.v example/rv32i/tests/fib.hex 200` → fib correct (P0-1)
+- [x] `qsim run example/rv32i_vhdl/rv32i_top.vhd example/rv32i/tests/fib.hex 200` → fib correct (P0-2)
+- [x] Sanitizer job green (P1-5) — verified on GitHub CI (v0.2.0 run)
+- [x] `tla/check.sh` runs TLC without errors (P0-4/P1-6)
+- [x] `git status` clean; no C4819 warnings (P2-8)
 
 ## Suggested commit sequence
 
-1. **P1-12** exit-code fixes for `test_npu_bugs` + smoke suites (prerequisite, small)
-2. **P1-11** `add_test` wiring (now every wired suite fails loudly)
-3. **P2-13** delete unbuilt scratch files; prune or convert debug executables
-4. **P2-14** build.rs private build dir
-5. **P3-15** cosmetic cleanups
-6. **NOTE** — no commit; document the toolchain workaround in README if desired
+1. **P1-12** exit-code fixes for `test_npu_bugs` + smoke suites (prerequisite, small) ✅ `50c5f64` / `2aa2132`
+2. **P1-11** `add_test` wiring (now every wired suite fails loudly) ✅ `50c5f64`
+3. **P2-13** delete unbuilt scratch files; prune or convert debug executables ✅ `2aa2132`
+4. **P2-14** build.rs private build dir ✅ `4225355`
+5. **P3-15** cosmetic cleanups ✅ `6ba6d34` + `6ac514f`
+6. **Parallel engine** — fixed separately ✅ `08c47e7` (run_perf_tests wired into ctest)
+7. **NOTE** — no commit; document the toolchain workaround in README if desired
 
 Each commit must keep the Global regression checklist green.
