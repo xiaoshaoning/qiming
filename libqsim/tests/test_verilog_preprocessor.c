@@ -161,6 +161,33 @@ static void test_include_simple(void)
     remove("_pp_test_inc.v");
 }
 
+static void test_include_crlf(void)
+{
+    verilog_preprocessor_t *pp = verilog_preprocessor_create();
+    ASSERT(pp != NULL, NULL);
+
+    /* CRLF line endings on the `include directive: the trailing \r must be
+     * trimmed from the spec, otherwise "...vh\r" is not found. */
+    FILE *f = fopen("_pp_test_crlf.v", "w");
+    ASSERT(f != NULL, "create include file");
+    fprintf(f, "wire crlf_signal;\n");
+    fclose(f);
+
+    char *out = verilog_preprocessor_process(pp, "./test.v",
+        "module test;\r\n"
+        "`include \"_pp_test_crlf.v\"\r\n"
+        "endmodule\r\n", 0);
+    if (!out) {
+        printf("  Error: %s\n", verilog_preprocessor_get_error(pp));
+    }
+    ASSERT(out != NULL, "CRLF include should succeed");
+    ASSERT(strstr(out, "crlf_signal") != NULL, "include content should appear");
+
+    free(out);
+    verilog_preprocessor_destroy(pp);
+    remove("_pp_test_crlf.v");
+}
+
 static void test_include_not_found(void)
 {
     verilog_preprocessor_t *pp = verilog_preprocessor_create();
@@ -471,6 +498,7 @@ int main(void)
     /* `include */
     printf("\n[Include]\n");
     TEST(test_include_simple);
+    TEST(test_include_crlf);
     TEST(test_include_not_found);
     TEST(test_include_path_search);
 

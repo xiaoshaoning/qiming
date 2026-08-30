@@ -387,6 +387,10 @@ static char *pp_resolve_path(verilog_preprocessor_t *pp, const char *spec,
                               const char *current_dir)
 {
     size_t slen = strlen(spec);
+    /* Trim trailing whitespace (CRLF sources leave '\r' on the directive). */
+    while (slen > 0 && (spec[slen-1] == '\r' || spec[slen-1] == ' ' ||
+                        spec[slen-1] == '\t'))
+        slen--;
     int use_current_dir = 1;
     const char *name;
     size_t nlen;
