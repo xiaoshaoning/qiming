@@ -135,8 +135,67 @@ if(BUILD_TESTING)
     target_link_libraries(qsim_test PRIVATE qsim)
     add_test(NAME qsim_test COMMAND qsim_test)
 
+    # Standalone suites (each has its own main with pass/fail exit codes).
+    # Wired into ctest so CI actually executes them; previously they were
+    # built but never run. Skipped: run_perf_tests (parallel engine bugs,
+    # see docs/review_plan.md NOTE) and the assertion-free debug programs
+    # (P2-13).
     add_executable(test_npu_bugs tests/test_npu_bugs.c)
     target_link_libraries(test_npu_bugs PRIVATE qsim)
+    add_test(NAME test_npu_bugs COMMAND test_npu_bugs)
+
+    add_executable(test_udp_sim tests/test_udp_sim.c)
+    target_link_libraries(test_udp_sim PRIVATE qsim)
+    add_test(NAME test_udp_sim COMMAND test_udp_sim)
+
+    add_executable(test_part_select tests/test_part_select.c)
+    target_link_libraries(test_part_select PRIVATE qsim)
+    add_test(NAME test_part_select COMMAND test_part_select)
+
+    add_executable(test_verilog_preprocessor tests/test_verilog_preprocessor.c)
+    target_link_libraries(test_verilog_preprocessor PRIVATE qsim)
+    add_test(NAME test_verilog_preprocessor COMMAND test_verilog_preprocessor)
+
+    add_executable(test_net_types tests/test_net_types.c)
+    target_include_directories(test_net_types PRIVATE tests)
+    target_link_libraries(test_net_types PRIVATE qsim)
+    add_test(NAME test_net_types COMMAND test_net_types)
+
+    add_executable(test_specify_parse tests/test_specify_parse.c)
+    target_link_libraries(test_specify_parse PRIVATE qsim)
+    add_test(NAME test_specify_parse COMMAND test_specify_parse)
+
+    add_executable(test_path_delay tests/test_path_delay.c)
+    target_link_libraries(test_path_delay PRIVATE qsim)
+    add_test(NAME test_path_delay COMMAND test_path_delay)
+
+    add_executable(test_sdf_annotate tests/test_sdf_annotate.c)
+    target_link_libraries(test_sdf_annotate PRIVATE qsim)
+    add_test(NAME test_sdf_annotate COMMAND test_sdf_annotate)
+
+    add_executable(test_timing_check tests/test_timing_check.c)
+    target_include_directories(test_timing_check PRIVATE tests)
+    target_link_libraries(test_timing_check PRIVATE qsim)
+    add_test(NAME test_timing_check COMMAND test_timing_check)
+
+    add_executable(test_vhdl_lib_use tests/test_vhdl_lib_use.c)
+    target_include_directories(test_vhdl_lib_use PRIVATE tests)
+    target_link_libraries(test_vhdl_lib_use PRIVATE qsim)
+    add_test(NAME test_vhdl_lib_use COMMAND test_vhdl_lib_use)
+
+    add_executable(test_idex_reg tests/test_idex_reg.c)
+    target_include_directories(test_idex_reg PRIVATE tests)
+    target_link_libraries(test_idex_reg PRIVATE qsim)
+    add_test(NAME test_idex_reg COMMAND test_idex_reg)
+
+    add_executable(test_combi_loop tests/test_combi_loop.c)
+    target_include_directories(test_combi_loop PRIVATE tests)
+    target_link_libraries(test_combi_loop PRIVATE qsim)
+    add_test(NAME test_combi_loop COMMAND test_combi_loop)
+
+    add_executable(test_library_path tests/test_library_path.c)
+    target_link_libraries(test_library_path PRIVATE qsim)
+    add_test(NAME test_library_path COMMAND test_library_path)
 
     add_executable(vhdl_debug5 tests/test_vhdl_debug5.c)
     target_link_libraries(vhdl_debug5 PRIVATE qsim)
@@ -148,31 +207,8 @@ if(BUILD_TESTING)
     target_include_directories(test_implicit_wire PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests)
     target_link_libraries(test_implicit_wire PRIVATE qsim)
 
-    add_executable(test_part_select tests/test_part_select.c)
-    target_link_libraries(test_part_select PRIVATE qsim)
-
     add_executable(run_perf_tests tests/run_perf_tests.c)
     target_link_libraries(run_perf_tests PRIVATE qsim)
-
-    add_executable(test_verilog_preprocessor tests/test_verilog_preprocessor.c)
-    target_link_libraries(test_verilog_preprocessor PRIVATE qsim)
-
-    add_executable(test_net_types tests/test_net_types.c)
-    target_include_directories(test_net_types PRIVATE tests)
-    target_link_libraries(test_net_types PRIVATE qsim)
-
-    add_executable(test_specify_parse tests/test_specify_parse.c)
-    target_link_libraries(test_specify_parse PRIVATE qsim)
-
-    add_executable(test_path_delay tests/test_path_delay.c)
-    target_link_libraries(test_path_delay PRIVATE qsim)
-
-    add_executable(test_sdf_annotate tests/test_sdf_annotate.c)
-    target_link_libraries(test_sdf_annotate PRIVATE qsim)
-
-    add_executable(test_idex_reg tests/test_idex_reg.c)
-    target_include_directories(test_idex_reg PRIVATE tests)
-    target_link_libraries(test_idex_reg PRIVATE qsim)
 
     add_executable(diag_rv32i_addi tests/diag_rv32i_addi.c)
     target_include_directories(diag_rv32i_addi PRIVATE tests)
@@ -181,10 +217,6 @@ if(BUILD_TESTING)
     add_executable(test_force_prop tests/test_force_prop.c)
     target_include_directories(test_force_prop PRIVATE tests)
     target_link_libraries(test_force_prop PRIVATE qsim)
-
-    add_executable(test_combi_loop tests/test_combi_loop.c)
-    target_include_directories(test_combi_loop PRIVATE tests)
-    target_link_libraries(test_combi_loop PRIVATE qsim)
 
     add_executable(test_bugs_from_report tests/test_bugs_from_report.c)
     target_include_directories(test_bugs_from_report PRIVATE tests)
@@ -198,24 +230,12 @@ if(BUILD_TESTING)
     target_include_directories(debug_vhdl_resolve PRIVATE tests)
     target_link_libraries(debug_vhdl_resolve PRIVATE qsim)
 
-    add_executable(test_timing_check tests/test_timing_check.c)
-    target_include_directories(test_timing_check PRIVATE tests)
-    target_link_libraries(test_timing_check PRIVATE qsim)
-
-    add_executable(test_udp_sim tests/test_udp_sim.c)
-    target_include_directories(test_udp_sim PRIVATE tests)
-    target_link_libraries(test_udp_sim PRIVATE qsim)
-
     add_executable(test_parse_big tests/test_parse_big.c)
     target_include_directories(test_parse_big PRIVATE tests)
     target_link_libraries(test_parse_big PRIVATE qsim)
 
     add_executable(test_multi_def tests/test_multi_def.c)
     target_link_libraries(test_multi_def PRIVATE qsim)
-
-    add_executable(test_vhdl_lib_use tests/test_vhdl_lib_use.c)
-    target_include_directories(test_vhdl_lib_use PRIVATE tests)
-    target_link_libraries(test_vhdl_lib_use PRIVATE qsim)
 
     add_executable(test_replicate_concat tests/test_replicate_concat.c)
     target_link_libraries(test_replicate_concat PRIVATE qsim)
@@ -228,8 +248,5 @@ if(BUILD_TESTING)
 
     add_executable(test_replicate_twoblk tests/test_replicate_twoblk.c)
     target_link_libraries(test_replicate_twoblk PRIVATE qsim)
-
-    add_executable(test_library_path tests/test_library_path.c)
-    target_link_libraries(test_library_path PRIVATE qsim)
 
 endif()

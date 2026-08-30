@@ -24,8 +24,8 @@ jobs:
 
       - name: Build and run C tests
         run: |
-          cmake --build build --target qsim_test
-          ctest --test-dir build --output-on-failure -R qsim_test
+          cmake --build build --parallel
+          ctest --test-dir build --output-on-failure
 
   # ── C library build + test on Windows (uses pre-generated PEG parsers; the
   #     peg tool is not present on runners, which also exercises that path) ──
@@ -63,10 +63,10 @@ jobs:
 
       - name: Build and run C tests under sanitizers
         run: |
-          cmake --build build --target qsim_test
+          cmake --build build --parallel
           ASAN_OPTIONS=detect_leaks=0:halt_on_error=1 \
           UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 \
-          ctest --test-dir build --output-on-failure -R qsim_test
+          ctest --test-dir build --output-on-failure
 
   # ── Rust build + unit tests ──
   rust-tests:

@@ -6,12 +6,15 @@
 #include <stdlib.h>
 #include "libqsim/session.h"
 
+static int npu_failures = 0;
+
 static int check_val(const char *label, qsim_bit_vector_t v,
                      int bit, qsim_logic_state_t expected) {
-    if (!v.bits) { printf("  %s: NULL bits\n", label); return 0; }
+    if (!v.bits) { printf("  %s: NULL bits\n", label); npu_failures++; return 0; }
     qsim_logic_state_t got = qsim_bit_get(&v, (uint32_t)bit).state;
     if (got != expected) {
         printf("  %s: FAIL: bit %d = %d, expected %d\n", label, bit, got, expected);
+        npu_failures++;
         return 0;
     }
     return 1;
@@ -912,6 +915,6 @@ int main(void)
     test_bug10_repl_concat();
     test_bug11_nba_reg_zero_in_arith();
 
-    printf("\nDone.\n");
-    return 0;
+    printf("\nDone. %d failure(s)\n", npu_failures);
+    return npu_failures > 0 ? 1 : 0;
 }
