@@ -77,6 +77,5 @@ int main(void) {
 
     uir_sim_destroy(sim);
     qsim_compile_result_free(cr);
-    printf(failures ? "\nFAILED\n" : "\nPASS\n");
     return failures ? 1 : 0;
 }

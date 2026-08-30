@@ -21,11 +21,8 @@ fn main()
 
     tauri_build::build();
 
-    // Build libqsim C library via CMake in a PRIVATE directory
-    // (build-cargo). The shared libqsim/build dir is left for manual
-    // cmake/ctest use with BUILD_TESTING=ON; using the same dir here
-    // would reconfigure it to BUILD_TESTING=OFF behind the developer
-    // and wipe it on stale-cache retry.
+    // Build libqsim via CMake in a private dir; libqsim/build stays for
+    // manual cmake/ctest use (BUILD_TESTING=ON).
     let libqsim_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .unwrap()
