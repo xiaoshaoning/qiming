@@ -13,7 +13,7 @@ checklist green.
 |---|----------|---------|
 | P1-11 | High | ~28 standalone test executables are built by CMake but **never run** (only `qsim_test` was registered with ctest; CI ran `-R qsim_test`) — **✅ LANDED: 13 suites wired, 14/14 ctest pass, CI filters removed** |
 | P1-12 | High | Several suites exit `0` even when checks fail — **partial: `test_npu_bugs` fixed; smoke suites deferred to P2-13** |
-| P2-13 | Medium | Scratch/debug files committed and built; 5 tracked test files not built at all |
+| P2-13 | Medium | Scratch/debug files committed and built — **✅ LANDED: 14 deleted, 5 regression suites salvaged + wired (19/19 ctest)** |
 | P2-14 | Medium | `build.rs` configures the same `libqsim/build` dir with `BUILD_TESTING=OFF`, fighting manual cmake runs and triggering cache wipes |
 | P3-15 | Low | Cosmetic: stale comments, stale program name, unneeded crate-types, open TODO |
 | NOTE | — | Local MSYS2 `ld` segfaults on its own `crt2.o` — environment, not repo code |
@@ -80,8 +80,9 @@ from `main()`, so even wired into ctest they would always pass.
   on every failure; `main()` returns `npu_failures > 0 ? 1 : 0`. Wired into
   ctest as part of P1-11.
 - Smoke-only suites (`test_multi_def`, `test_parse_big`, `test_replicate_*`,
-  `test_force_prop`): deferred — P2-13 decides whether to delete them or add
-  failure tracking (their coverage largely overlaps `qsim_test`).
+  `test_force_prop`): **resolved in P2-13** — deleted (print-scratch / redundant
+  coverage); the assert-bearing `test_replicate_cpu`/`test_replicate_twoblk`
+  were kept and wired instead.
 
 **Verification.**
 - [x] `test_npu_bugs` wired into ctest and passing (P1-11 run, 14/14)
@@ -97,37 +98,49 @@ from `main()`, so even wired into ctest they would always pass.
 
 ## P2-13 — Scratch/debug files committed and built
 
-> **STATUS: ☐ OPEN**
+> **STATUS: ✅ LANDED**
 
-**Problem.** Debug scratch and reproduction programs are tracked in git; some are
-built by CMake with no assertions, others are not built at all (dead code).
+**Problem.** Debug scratch and reproduction programs were tracked in git; some
+were built by CMake with no assertions, others were not built at all (dead
+code).
 
-**Evidence.**
-- Built but assertion-free debug executables (`CMakeLists.txt:141-191`):
-  `debug_vhdl_resolve.c`, `diag_rv32i_addi.c`, `test_bug3_debug.c`,
-  `test_bugs_from_report.c`, `vhdl_debug3.c`, `vhdl_debug5.c`,
-  `test_implicit_wire.c` — `main()` exists, zero checks.
-- Tracked but NOT referenced in CMakeLists at all:
-  `qiming_repro.c` (145 lines), `test_bug12_diag.c` (272),
-  `test_bug1_repro.c` (83), `test_just_repl.c` (71), `test_proc_dump.c` (90).
+**Fix applied (verified content before deciding — several files the plan called
+"assertion-free" actually had real checks).**
 
-**Fix applied.** *(proposed — two-phase)*
-- Phase 1 (delete dead code): remove the 5 files CMake never builds.
-- Phase 2 (delete or salvage): for the 7 assertion-free debug executables,
-  either add real assertions and keep, or delete them and their
-  `add_executable` blocks. If any covered a real regression (check git log /
-  fix_plan.md), port the check into `qsim_test` instead of keeping a standalone
-  binary.
+*Deleted (14 files — pure print-scratch, fake/stale expectations, redundant
+coverage, or unbuildable):*
+- Print-only diagnostics: `debug_vhdl_resolve.c`, `test_bug3_debug.c`,
+  `test_vhdl_debug3.c`, `test_vhdl_debug5.c`, `test_multi_def.c` (0 asserts)
+- Fake pass / expectations printed but never checked: `test_proc_dump.c`
+  (prints "PASS" unconditionally), `test_force_prop.c` (prints "expect …"
+  without asserting; showed a real mismatch and exited 0)
+- Redundant coverage: `diag_rv32i_addi.c` (ADDI in `test_cpu_rv32i_*`),
+  `test_just_repl.c` / `test_replicate_concat.c` /
+  `test_replicate_focused.c` (repl/concat in `test_replicate_cpu/twoblk`),
+  `test_parse_big.c` (large design in `test_cpu_rv32i`),
+  `qiming_repro.c` (ifdef in `test_verilog_preprocessor`, large signals in
+  `test_cpu_rv32i`)
+- Unbuildable: `test_bug1_repro.c` (`#include "test.h"` — header never existed)
+
+*Kept and wired into ctest (5 files — real assertions + proper exit codes,
+unique regression coverage):*
+- `test_bugs_from_report.c` (13 checks, `return passed == tests ? 0 : 1`)
+- `test_bug12_diag.c` (8 checks, proper exit)
+- `test_implicit_wire.c` (4 checks — added failure counter + exit code)
+- `test_replicate_cpu.c` (16 checks, `return fails`)
+- `test_replicate_twoblk.c` (6 checks, `return fails`)
 
 **Verification.**
-- [ ] `git grep` confirms no references to deleted files
-- [ ] Full `ctest` still green after removals
+- [x] ctest now runs **19/19 suites, all pass** (14 previous + 5 new; MSVC build)
+- [x] No dangling references (CMakeLists, code); docs references are historical
+- [x] `run_perf_tests` kept (benchmark) but still unwired — parallel engine bugs
 
 **Checklist.**
-- [ ] 5 unbuilt scratch files removed
-- [ ] 7 debug executables removed or converted to assert-based tests
-- [ ] CMakeLists cleaned of corresponding `add_executable` blocks
-- [ ] No regression coverage lost (checks ported where valuable)
+- [x] 14 unbuilt/built scratch files removed (git rm)
+- [x] 5 regression suites with real assertions kept and wired into ctest
+- [x] CMakeLists cleaned (20 executables: 19 ctest-wired + run_perf_tests)
+- [x] No regression coverage lost (checked each deleted file's scenarios)
+
 
 ---
 

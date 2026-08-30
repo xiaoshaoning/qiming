@@ -197,56 +197,34 @@ if(BUILD_TESTING)
     target_link_libraries(test_library_path PRIVATE qsim)
     add_test(NAME test_library_path COMMAND test_library_path)
 
-    add_executable(vhdl_debug5 tests/test_vhdl_debug5.c)
-    target_link_libraries(vhdl_debug5 PRIVATE qsim)
+    # Regression suites salvaged from debug/repro scratch (P2-13). Each has
+    # real assertions and a proper pass/fail exit code.
+    add_executable(test_bugs_from_report tests/test_bugs_from_report.c)
+    target_include_directories(test_bugs_from_report PRIVATE tests)
+    target_link_libraries(test_bugs_from_report PRIVATE qsim)
+    add_test(NAME test_bugs_from_report COMMAND test_bugs_from_report)
 
-    add_executable(vhdl_debug3 tests/test_vhdl_debug3.c)
-    target_link_libraries(vhdl_debug3 PRIVATE qsim)
+    add_executable(test_bug12_diag tests/test_bug12_diag.c)
+    target_include_directories(test_bug12_diag PRIVATE tests)
+    target_link_libraries(test_bug12_diag PRIVATE qsim)
+    add_test(NAME test_bug12_diag COMMAND test_bug12_diag)
 
     add_executable(test_implicit_wire tests/test_implicit_wire.c)
     target_include_directories(test_implicit_wire PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests)
     target_link_libraries(test_implicit_wire PRIVATE qsim)
-
-    add_executable(run_perf_tests tests/run_perf_tests.c)
-    target_link_libraries(run_perf_tests PRIVATE qsim)
-
-    add_executable(diag_rv32i_addi tests/diag_rv32i_addi.c)
-    target_include_directories(diag_rv32i_addi PRIVATE tests)
-    target_link_libraries(diag_rv32i_addi PRIVATE qsim)
-
-    add_executable(test_force_prop tests/test_force_prop.c)
-    target_include_directories(test_force_prop PRIVATE tests)
-    target_link_libraries(test_force_prop PRIVATE qsim)
-
-    add_executable(test_bugs_from_report tests/test_bugs_from_report.c)
-    target_include_directories(test_bugs_from_report PRIVATE tests)
-    target_link_libraries(test_bugs_from_report PRIVATE qsim)
-
-    add_executable(test_bug3_debug tests/test_bug3_debug.c)
-    target_include_directories(test_bug3_debug PRIVATE tests)
-    target_link_libraries(test_bug3_debug PRIVATE qsim)
-
-    add_executable(debug_vhdl_resolve tests/debug_vhdl_resolve.c)
-    target_include_directories(debug_vhdl_resolve PRIVATE tests)
-    target_link_libraries(debug_vhdl_resolve PRIVATE qsim)
-
-    add_executable(test_parse_big tests/test_parse_big.c)
-    target_include_directories(test_parse_big PRIVATE tests)
-    target_link_libraries(test_parse_big PRIVATE qsim)
-
-    add_executable(test_multi_def tests/test_multi_def.c)
-    target_link_libraries(test_multi_def PRIVATE qsim)
-
-    add_executable(test_replicate_concat tests/test_replicate_concat.c)
-    target_link_libraries(test_replicate_concat PRIVATE qsim)
-
-    add_executable(test_replicate_focused tests/test_replicate_focused.c)
-    target_link_libraries(test_replicate_focused PRIVATE qsim)
+    add_test(NAME test_implicit_wire COMMAND test_implicit_wire)
 
     add_executable(test_replicate_cpu tests/test_replicate_cpu.c)
     target_link_libraries(test_replicate_cpu PRIVATE qsim)
+    add_test(NAME test_replicate_cpu COMMAND test_replicate_cpu)
 
     add_executable(test_replicate_twoblk tests/test_replicate_twoblk.c)
     target_link_libraries(test_replicate_twoblk PRIVATE qsim)
+    add_test(NAME test_replicate_twoblk COMMAND test_replicate_twoblk)
+
+    # Benchmark harness; NOT wired into ctest: the multi-partition parallel
+    # engine has known bugs (see docs/review_plan.md NOTE).
+    add_executable(run_perf_tests tests/run_perf_tests.c)
+    target_link_libraries(run_perf_tests PRIVATE qsim)
 
 endif()

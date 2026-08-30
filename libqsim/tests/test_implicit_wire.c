@@ -51,6 +51,7 @@ int main(void) {
     if (!v) v = uir_sim_get_signal(sim, "test.implicit_wire");
 
     printf("implicit_wire: ");
+    int failures = 0;
     if (v) {
         printf("width=%u ", v->width);
         for (uint32_t i = 0; i < v->width; i++) {
@@ -61,9 +62,11 @@ int main(void) {
             printf("  PASS (8-bit)\n");
         } else {
             printf("  FAIL (expected 8-bit, got %u-bit)\n", v->width);
+            failures++;
         }
     } else {
         printf("NOT FOUND (implicit wire was not created)\n");
+        failures++;
     }
 
     /* Dump all signal names */
@@ -74,5 +77,6 @@ int main(void) {
 
     uir_sim_destroy(sim);
     qsim_compile_result_free(cr);
-    return 0;
+    printf(failures ? "\nFAILED\n" : "\nPASS\n");
+    return failures ? 1 : 0;
 }
