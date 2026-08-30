@@ -29,7 +29,7 @@ int main(void)
 {
     setvbuf(stdout, NULL, _IONBF, 0);
     setvbuf(stderr, NULL, _IONBF, 0);
-    printf("Qiming Libdsim Test Suite\n");
+    printf("Qiming Test Suite\n");
     printf("========================================\n\n");
 
     register_value_tests();

@@ -1212,7 +1212,9 @@ uir_node_t *uir_find_signal(uir_design_unit_t *unit, const char *hier_path)
         }
     }
 
-    /* TODO: handle hierarchical paths with dot notation */
+    /* Hierarchical (dotted) paths are resolved by uir_find_signal_hier in
+     * elaboration.c; this flat lookup only matches plain names within one
+     * unit (the parser resolves names during elaboration). */
     return NULL;
 }
 

@@ -192,7 +192,9 @@ qsim_bit_vector_t *qsim_bit_vector_from_str(const char *str)
     } else if (base == 16) {
         width = (uint32_t)digit_len * 4;
     } else {
-        /* decimal: allocate enough bits */
+        /* decimal: allocate 32 bits; digits are NOT parsed (no base-10
+         * decoding implemented) — the vector stays all-X. No caller uses
+         * decimal literal parsing today; implement here if one appears. */
         width = 32;
     }
 
@@ -243,7 +245,7 @@ qsim_bit_vector_t *qsim_bit_vector_from_str(const char *str)
 char *qsim_bit_vector_to_str(const qsim_bit_vector_t *v)
 {
     if (!v) return NULL;
-    /* Format: 'b followed by bits, or decimal for width > 32 */
+    /* Always emits 'b (binary) format, LSB-first storage rendered MSB-first. */
     char *buf = malloc(v->width + 4);
     if (!buf) return NULL;
 

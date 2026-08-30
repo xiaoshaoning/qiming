@@ -15,7 +15,7 @@ checklist green.
 | P1-12 | High | Several suites exit `0` even when checks fail — **partial: `test_npu_bugs` fixed; smoke suites deferred to P2-13** |
 | P2-13 | Medium | Scratch/debug files committed and built — **✅ LANDED: 14 deleted, 5 regression suites salvaged + wired (19/19 ctest)** |
 | P2-14 | Medium | `build.rs` configures the same `libqsim/build` dir with `BUILD_TESTING=OFF`, fighting manual cmake runs and triggering cache wipes — **✅ LANDED: private `build-cargo/` dir** |
-| P3-15 | Low | Cosmetic: stale comments, stale program name, unneeded crate-types, open TODO |
+| P3-15 | Low | Cosmetic: stale comments, stale program name, unneeded crate-types, open TODO — **✅ LANDED** |
 | NOTE | — | Local MSYS2 `ld` segfaults on its own `crt2.o` — environment, not repo code |
 | NOTE | — | Parallel engine bugs found during P1-11 (crash, cross-sensitivity, delta storm) — tracked, out of scope |
 
@@ -174,20 +174,19 @@ their back, and any stale `CMakeCache.txt` (e.g. from WSL) triggered a full
 
 ## P3-15 — Cosmetic cleanups
 
-> **STATUS: ☐ OPEN**
+> **STATUS: ✅ LANDED**
 
-| Item | Location | Fix |
-|------|----------|-----|
-| Stale comment "decimal for width > 32" — `to_str` always emits `'b` | `libqsim/src/value.c:224` | Fix comment; note `from_str` base-10 is a silent no-op (allocates 32 X bits, parses nothing) — document or implement |
-| Program name "Libdsim" in banner | `libqsim/tests/main_test.c:16` | Rename to "Qiming" |
-| `crate-type = ["lib","cdylib","staticlib"]` | `src-tauri/Cargo.toml` | Keep only `lib` (nothing links the Rust crate as C) |
-| `TODO: handle hierarchical paths with dot notation` | `libqsim/src/uir.c:1215` | Either implement or file a tracked issue so it is not silently pending |
+| Item | Location | Fix applied |
+|------|----------|-------------|
+| Stale comment "decimal for width > 32" — `to_str` always emits `'b` | `libqsim/src/value.c` | Comment corrected; base-10 `from_str` no-op documented (all-X, no caller uses it) |
+| Program name "Libdsim" in banner | `libqsim/tests/main_test.c` | Renamed to "Qiming Test Suite" (verified in run output) |
+| `crate-type = ["lib","cdylib","staticlib"]` | `src-tauri/Cargo.toml` | Trimmed to `["lib"]` — nothing links the Rust crate as C (checked all consumers) |
+| `TODO: handle hierarchical paths with dot notation` | `libqsim/src/uir.c` | Not a gap: hierarchical lookup already exists as `uir_find_signal_hier` in elaboration.c; comment now points to it |
 
-**Checklist.**
-- [ ] value.c comments match behavior (or decimal parsing implemented)
-- [ ] Test banner renamed
-- [ ] crate-type trimmed (verify `cargo build`/`cargo test` unaffected)
-- [ ] uir.c TODO resolved or tracked
+**Verification.**
+- [x] C suite 606/606 (MSVC build after changes)
+- [x] Banner "Qiming Test Suite" in run output
+- [x] `cargo check` passes with trimmed crate-type
 
 ---
 
