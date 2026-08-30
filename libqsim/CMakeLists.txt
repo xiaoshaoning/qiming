@@ -209,6 +209,11 @@ if(BUILD_TESTING)
     target_link_libraries(test_loop_blocks PRIVATE qsim)
     add_test(NAME test_loop_blocks COMMAND test_loop_blocks)
 
+    add_executable(test_array_ports tests/test_array_ports.c)
+    target_include_directories(test_array_ports PRIVATE tests)
+    target_link_libraries(test_array_ports PRIVATE qsim)
+    add_test(NAME test_array_ports COMMAND test_array_ports)
+
     add_executable(test_bug12_diag tests/test_bug12_diag.c)
     target_include_directories(test_bug12_diag PRIVATE tests)
     target_link_libraries(test_bug12_diag PRIVATE qsim)

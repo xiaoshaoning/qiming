@@ -13,14 +13,13 @@ locations so each fix has a starting point.
 
 ---
 
-**Fix status (updated):** #1 (procedural loops) **FIXED** in `08c47e7`+ — the loop
-root cause was not "zero iterations" but the loop-back scheduling each iteration
-as an event (do-while semantics + interleaving with following statements).
-`UIR_LOOP_BACK` now re-runs the body synchronously (blocking), `UIR_LOOP` checks
-the entry condition, and a 256-iteration budget falls back to event scheduling
-for huge loops. Regression: `libqsim/tests/test_loop_blocks.c` (12 checks,
-ctest `test_loop_blocks`). Remaining: #8+#9 (time + log printing) are the next
-unblockers per the priority order below.
+**Fix status (updated):** #1, #8, #9, #7, #4, #10 all fixed (commits
+`8e0e6e9`..`47ef509`). NEW gaps found and fixed: **unpacked-array module ports**
+(`input wire [63:0] pmpaddr [0:7]` — parse, connect, indexed read/write incl.
+`arr[i][msb:lsb]`; unblocks `u74_pmp.v`, `u74_l1d_cache.v`, part of
+`u74_csr_unit.v`/`u74_core_top.v`). U74 compile count: 18/21. Remaining:
+`\`define` macro refs (core_top), `real` (#3, fpu), and a context-dependent
+part-select-NBA gap in csr_unit.
 
 ---
 

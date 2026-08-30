@@ -57,15 +57,21 @@ port_list <- (port_item ( COMMA port_item )*)?
 port_item <- KW_INPUT
     { _parse_port_sig_type = UIR_SIG_WIRE; _parse_decl_signed = 0; }
     (KW_REG { _parse_port_sig_type = UIR_SIG_REG; } / KW_WIRE / KW_LOGIC { _parse_port_sig_type = UIR_SIG_LOGIC; })? (KW_SIGNED { _parse_decl_signed = 1; })? range_opt ID
-    { _parse_add_port_signed(yytext, UIR_PORT_IN, _parse_range_msb, _parse_range_lsb, _parse_port_sig_type); _parse_range_msb = 0; _parse_range_lsb = 0; }
+    { _parse_saved = parse_strdup(yytext); _parse_array_size = 0; _parse_array_dims_count = 0; }
+    array_dims_opt
+    { _parse_add_port_signed(_parse_saved, UIR_PORT_IN, _parse_range_msb, _parse_range_lsb, _parse_port_sig_type); _parse_range_msb = 0; _parse_range_lsb = 0; free(_parse_saved); _parse_saved = NULL; }
   / KW_OUTPUT
     { _parse_port_sig_type = UIR_SIG_WIRE; _parse_decl_signed = 0; }
     (KW_REG { _parse_port_sig_type = UIR_SIG_REG; } / KW_WIRE / KW_LOGIC { _parse_port_sig_type = UIR_SIG_LOGIC; })? (KW_SIGNED { _parse_decl_signed = 1; })? range_opt ID
-    { _parse_add_port_signed(yytext, UIR_PORT_OUT, _parse_range_msb, _parse_range_lsb, _parse_port_sig_type); _parse_range_msb = 0; _parse_range_lsb = 0; }
+    { _parse_saved = parse_strdup(yytext); _parse_array_size = 0; _parse_array_dims_count = 0; }
+    array_dims_opt
+    { _parse_add_port_signed(_parse_saved, UIR_PORT_OUT, _parse_range_msb, _parse_range_lsb, _parse_port_sig_type); _parse_range_msb = 0; _parse_range_lsb = 0; free(_parse_saved); _parse_saved = NULL; }
   / KW_INOUT
     { _parse_port_sig_type = UIR_SIG_WIRE; _parse_decl_signed = 0; }
     (KW_REG { _parse_port_sig_type = UIR_SIG_REG; } / KW_WIRE / KW_LOGIC { _parse_port_sig_type = UIR_SIG_LOGIC; })? (KW_SIGNED { _parse_decl_signed = 1; })? range_opt ID
-    { _parse_add_port_signed(yytext, UIR_PORT_INOUT, _parse_range_msb, _parse_range_lsb, _parse_port_sig_type); _parse_range_msb = 0; _parse_range_lsb = 0; }
+    { _parse_saved = parse_strdup(yytext); _parse_array_size = 0; _parse_array_dims_count = 0; }
+    array_dims_opt
+    { _parse_add_port_signed(_parse_saved, UIR_PORT_INOUT, _parse_range_msb, _parse_range_lsb, _parse_port_sig_type); _parse_range_msb = 0; _parse_range_lsb = 0; free(_parse_saved); _parse_saved = NULL; }
   / ID { add_bare_port_name(yytext); _parse_range_msb = 0; _parse_range_lsb = 0; }
 
 module_body <- ( attr_list? ( net_decl / reg_decl / logic_decl / integer_decl / input_decl
@@ -765,6 +771,13 @@ primary_expr <- LPAREN expr RPAREN
     / ID LBRACKET { _parse_array_id = parse_strdup(yytext); } expr COLON expr RBRACKET
         { uir_node_t *_ps_lo = expr_pop(); uir_node_t *_ps_hi = expr_pop();
           if (_parse_unit) do_part_select(_parse_unit, _parse_array_id, _ps_hi, _ps_lo);
+          free(_parse_array_id); _parse_array_id = NULL; }
+    / ID LBRACKET { _parse_array_id = parse_strdup(yytext); _parse_multi_index_count = 0; }
+        expr RBRACKET
+        { _parse_multi_indices[_parse_multi_index_count++] = expr_pop(); }
+        LBRACKET expr COLON expr RBRACKET
+        { uir_node_t *_ps_lo = expr_pop(); uir_node_t *_ps_hi = expr_pop();
+          if (_parse_unit) do_index_part_select(_parse_unit, _parse_array_id, _parse_multi_indices[0], _ps_hi, _ps_lo);
           free(_parse_array_id); _parse_array_id = NULL; }
     / ID LBRACKET { _parse_multi_id = parse_strdup(yytext); _parse_multi_index_count = 0; }
         expr RBRACKET

@@ -1101,6 +1101,14 @@ static void set_signal_array_dims(uir_signal_t *s) {
 }
 
 /* PEG-action helpers that avoid nested {} (peg tool limitation). */
+static void set_port_array_dims(uir_port_t *p) {
+    if (!p) return;
+    p->array_size = _parse_array_size;
+    for (int i = 0; i < _parse_array_dims_count && i < 4; i++)
+        p->array_dims[i] = _parse_array_dims[i];
+    p->array_dim_count = (size_t)_parse_array_dims_count;
+}
+
 static void _parse_add_port_signed(const char *name, uir_port_dir_t dir,
                                     uint32_t msb, uint32_t lsb,
                                     uir_signal_type_t sig_type) {
@@ -1112,7 +1120,7 @@ static void _parse_add_port_signed(const char *name, uir_port_dir_t dir,
         return;
     }
     uir_port_t *p = uir_add_port(_parse_unit, name, dir, msb, lsb, sig_type);
-    if (p) p->is_signed = _parse_decl_signed;
+    if (p) { p->is_signed = _parse_decl_signed; set_port_array_dims(p); }
 }
 
 static void _parse_add_signal_signed(const char *name, uir_signal_type_t type,
@@ -1873,6 +1881,18 @@ static void do_part_select(uir_design_unit_t *unit, const char *name,
     if (!unit || !name || !hi || !lo) return;
     uir_node_t *ref = uir_make_ref_part_select(unit, name, hi, lo, parse_loc());
     if (ref) expr_push(ref);
+}
+
+/* Element index + range part-select: arr[i][msb:lsb] — the ref carries
+ * BOTH an index and part-select bounds; the sim adds the element offset. */
+static void do_index_part_select(uir_design_unit_t *unit, const char *name,
+                                  uir_node_t *idx, uir_node_t *hi, uir_node_t *lo) {
+    if (!unit || !name || !idx || !hi || !lo) return;
+    uir_node_t *ref = uir_make_ref_part_select(unit, name, hi, lo, parse_loc());
+    if (ref) {
+        ((uir_ref_t *)ref)->index = idx;
+        expr_push(ref);
+    }
 }
 
 /* Indexed part-select: arr[base +: width] or arr[base -: width].

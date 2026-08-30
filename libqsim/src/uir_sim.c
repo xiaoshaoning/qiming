@@ -855,6 +855,7 @@ static int add_signal(uir_sim_context_t *ctx, uir_node_t *node, const char *name
     } else if (node->kind == UIR_PORT) {
         uir_port_t *p = (uir_port_t *)node;
         width = p->width;
+        if (p->array_size > 0) width *= p->array_size;  /* unpacked array port */
         s->is_signed = p->is_signed;
         init_state = p->init_value.state;
     }
@@ -3214,6 +3215,23 @@ static qsim_bit_vector_t *eval_expr(uir_sim_context_t *ctx, uir_node_t *node) {
                 qsim_bit_vector_free(lo_val);
                 uint32_t start_bit = (hi >= lo) ? lo : hi;
                 uint32_t part_w = (hi >= lo) ? (hi - lo + 1) : (lo - hi + 1);
+                /* Element offset when the base is indexed: arr[i][msb:lsb] */
+                if (ref->index) {
+                    uir_node_t *sig_node = ctx->signals[idx].node;
+                    uint32_t elem_width = 1;
+                    if (sig_node->kind == UIR_SIGNAL)
+                        elem_width = ((uir_signal_t *)sig_node)->width;
+                    else if (sig_node->kind == UIR_PORT)
+                        elem_width = ((uir_port_t *)sig_node)->width;
+                    qsim_bit_vector_t *iv = eval_expr(ctx, ref->index);
+                    if (iv) {
+                        uint32_t eidx = 0;
+                        for (uint32_t b = 0; b < iv->width && b < 32; b++)
+                            if (qsim_bit_get(iv, b).state == QSIM_1) eidx |= (1u << b);
+                        qsim_bit_vector_free(iv);
+                        start_bit += eidx * elem_width;
+                    }
+                }
                 qsim_bit_vector_t *full = ctx->signals[idx].value;
                 qsim_bit_vector_t *result = qsim_bit_vector_alloc(part_w);
                 if (!result) return qsim_bit_vector_from_state(part_w, QSIM_X);
@@ -3234,6 +3252,12 @@ static qsim_bit_vector_t *eval_expr(uir_sim_context_t *ctx, uir_node_t *node) {
                     array_dim_count = sig->array_dim_count;
                     for (size_t d = 0; d < array_dim_count && d < 4; d++)
                         array_dims[d] = sig->array_dims[d];
+                } else if (sig_node->kind == UIR_PORT) {
+                    uir_port_t *pp = (uir_port_t *)sig_node;
+                    elem_width = pp->width;
+                    array_dim_count = pp->array_dim_count;
+                    for (size_t d = 0; d < array_dim_count && d < 4; d++)
+                        array_dims[d] = pp->array_dims[d];
                 }
                 size_t nidxs = ref->multi_idx_count < array_dim_count ? ref->multi_idx_count : array_dim_count;
                 uint32_t bit_off = 0;
@@ -3275,7 +3299,9 @@ static qsim_bit_vector_t *eval_expr(uir_sim_context_t *ctx, uir_node_t *node) {
                     elem_width = sig->width;
                     is_array = (sig->array_size > 0);
                 } else if (sig_node->kind == UIR_PORT) {
-                    elem_width = ((uir_port_t *)sig_node)->width;
+                    uir_port_t *pp = (uir_port_t *)sig_node;
+                    elem_width = pp->width;
+                    is_array = (pp->array_size > 0);
                 }
                 uint32_t result_width = is_array ? elem_width : 1;
                 qsim_bit_vector_t *index_val = eval_expr(ctx, ref->index);
@@ -4329,6 +4355,12 @@ static void exec_assign(uir_sim_context_t *ctx, uir_assign_t *assign) {
                     array_dim_count = sig->array_dim_count;
                     for (size_t d = 0; d < array_dim_count && d < 4; d++)
                         array_dims[d] = sig->array_dims[d];
+                } else if (lhs_node->kind == UIR_PORT) {
+                    uir_port_t *pp = (uir_port_t *)lhs_node;
+                    elem_w = pp->width;
+                    array_dim_count = pp->array_dim_count;
+                    for (size_t d = 0; d < array_dim_count && d < 4; d++)
+                        array_dims[d] = pp->array_dims[d];
                 }
                 size_t nidxs = ref->multi_idx_count < array_dim_count ? ref->multi_idx_count : array_dim_count;
                 uint32_t bit_off = 0;
@@ -4381,7 +4413,9 @@ static void exec_assign(uir_sim_context_t *ctx, uir_assign_t *assign) {
                     elem_w = sig->width;
                     is_array = (sig->array_size > 0);
                 } else if (lhs_node->kind == UIR_PORT) {
-                    elem_w = ((uir_port_t *)lhs_node)->width;
+                    uir_port_t *pp = (uir_port_t *)lhs_node;
+                    elem_w = pp->width;
+                    is_array = (pp->array_size > 0);
                 }
                 uint32_t write_w = is_array ? elem_w : 1;
                 qsim_bit_vector_t *index_val = eval_expr(ctx, ref->index);
