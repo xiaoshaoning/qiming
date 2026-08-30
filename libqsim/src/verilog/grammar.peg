@@ -253,6 +253,7 @@ array_range <- LBRACKET NUMBER { _parse_array_msb = (uint32_t)atoi(yytext); }
 
 assign_stmt <- KW_ASSIGN delay_control?
     ( ID { _parse_assign_lhs = parse_strdup(yytext); }
+        ( DOT ID { hier_append_lhs(yytext); } )*
         ( LBRACKET expr COLON expr RBRACKET
             { _parse_lhs_lo = expr_pop(); _parse_lhs_hi = expr_pop(); }
         / LBRACKET expr RBRACKET
@@ -414,9 +415,9 @@ sys_period <- SYS_PERIOD LPAREN ID { _parse_saved = parse_strdup(yytext); }
 
 trigger_stmt <- ARROW ID SEMI { do_trigger_stmt(yytext); }
 
-system_task <- SYS_READMEMH LPAREN STRING { _parse_saved = parse_strdup(yytext); } COMMA ID RPAREN SEMI
-    { if (_parse_unit) append_stmt(uir_make_sys_task(_parse_unit, UIR_SYS_READMEMH, _parse_saved, yytext, NULL, NULL, 0, parse_loc()));
-      free(_parse_saved); _parse_saved = NULL; }
+system_task <- SYS_READMEMH LPAREN STRING { _parse_saved = parse_strdup(yytext); } COMMA ID { _parse_assign_lhs = parse_strdup(yytext); } ( DOT ID { hier_append_lhs(yytext); } )* RPAREN SEMI
+    { if (_parse_unit) append_stmt(uir_make_sys_task(_parse_unit, UIR_SYS_READMEMH, _parse_saved, _parse_assign_lhs, NULL, NULL, 0, parse_loc()));
+      free(_parse_saved); _parse_saved = NULL; free(_parse_assign_lhs); _parse_assign_lhs = NULL; }
   / SYS_WRITEMEMH LPAREN STRING { _parse_saved = parse_strdup(yytext); } COMMA ID RPAREN SEMI
     { if (_parse_unit) append_stmt(uir_make_sys_task(_parse_unit, UIR_SYS_WRITEMEMH, _parse_saved, yytext, NULL, NULL, 0, parse_loc()));
       free(_parse_saved); _parse_saved = NULL; }
@@ -585,6 +586,7 @@ task_item_decl <- input_decl / output_decl / inout_decl / reg_decl / integer_dec
 
 blocking_assign <-
     ( ID { _parse_assign_lhs = parse_strdup(yytext); _parse_multi_index_count = 0; }
+        ( DOT ID { hier_append_lhs(yytext); } )*
         ( LBRACKET expr RBRACKET
             { _parse_multi_indices[_parse_multi_index_count++] = expr_pop(); }
             ( LBRACKET expr RBRACKET
@@ -604,6 +606,7 @@ blocking_assign <-
 
 nonblocking_assign <-
     ( ID { _parse_assign_lhs = parse_strdup(yytext); _parse_multi_index_count = 0; }
+        ( DOT ID { hier_append_lhs(yytext); } )*
         ( LBRACKET expr RBRACKET
             { _parse_multi_indices[_parse_multi_index_count++] = expr_pop(); }
             ( LBRACKET expr RBRACKET
@@ -813,6 +816,9 @@ primary_expr <- LPAREN expr RPAREN
           free(_parse_array_id); _parse_array_id = NULL; }
     / ID { _parse_func_call_sp = _expr_sp; _parse_func_call_name = parse_strdup(yytext); } LPAREN expr_list RPAREN
         { if (_parse_unit) do_func_call_expr(_parse_unit, _parse_func_call_name); free(_parse_func_call_name); _parse_func_call_name = NULL; }
+    / ID { _parse_hier_name = parse_strdup(yytext); }
+        ( DOT ID { hier_append_lhs(yytext); } )+
+        { if (_parse_unit) expr_push(make_ref_implicit(_parse_unit, _parse_assign_lhs, parse_loc())); free(_parse_assign_lhs); _parse_assign_lhs = NULL; }
     / ID { if (_parse_unit) expr_push(make_ref_implicit(_parse_unit, yytext, parse_loc())); }
     / NUMBER { if (_parse_unit) expr_push(parse_number_literal(_parse_unit, yytext, parse_loc())); }
     / concat_expr

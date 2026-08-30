@@ -1865,6 +1865,7 @@ static void save_param_value(void) {
 static void ensure_implicit_wire(uir_design_unit_t *unit, const char *name,
                                   uir_node_t *context_expr) {
     if (!unit || !name) return;
+    if (strchr(name, '.')) return;  /* hierarchical ref — target exists in the sim table */
     if (uir_find_signal(unit, name)) return;
     if (is_genvar_name(name)) return;
     if (is_event_name(name)) return;
@@ -2602,6 +2603,18 @@ static void do_assign_stmt_finish(uir_design_unit_t *unit) {
         if (unit) do_continuous_assign2(unit, _parse_assign_lhs, _parse_lhs_index, _parse_lhs_hi, _parse_lhs_lo);
         free(_parse_assign_lhs); _parse_assign_lhs = NULL;
         _parse_lhs_index = NULL; _parse_lhs_hi = NULL; _parse_lhs_lo = NULL;
+    }
+}
+
+/* Append ".name" to a hierarchical LHS ref (top.dut.mem[0] = ...). */
+static void hier_append_lhs(const char *name) {
+    if (!_parse_assign_lhs || !name) return;
+    size_t n = strlen(_parse_assign_lhs) + 1 + strlen(name) + 1;
+    char *s = malloc(n);
+    if (s) {
+        snprintf(s, n, "%s.%s", _parse_assign_lhs, name);
+        free(_parse_assign_lhs);
+        _parse_assign_lhs = s;
     }
 }
 

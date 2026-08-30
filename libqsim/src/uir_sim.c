@@ -915,6 +915,16 @@ static int add_signal(uir_sim_context_t *ctx, uir_node_t *node, const char *name
 }
 
 static int find_signal_idx(uir_sim_context_t *ctx, const char *name) {
+    /* Hierarchical refs may include the top module's name (top.dut.mem);
+     * the table registers paths relative to the top unit (dut.mem), so
+     * also try the name with the top-module prefix stripped. */
+    if (name && ctx->unit_count > 0 && ctx->units[0] && ctx->units[0]->name) {
+        size_t tl = strlen(ctx->units[0]->name);
+        if (strncmp(name, ctx->units[0]->name, tl) == 0 && name[tl] == '.') {
+            int idx = find_signal_idx(ctx, name + tl + 1);
+            if (idx >= 0) return idx;
+        }
+    }
     /* Use hash table if available (O(1)), fall back to linear scan. */
     if (ctx->sig_ht_ready) {
         int idx = signal_ht_lookup(ctx, name);

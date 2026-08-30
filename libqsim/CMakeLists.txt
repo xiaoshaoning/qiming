@@ -219,6 +219,11 @@ if(BUILD_TESTING)
     target_link_libraries(test_real PRIVATE qsim)
     add_test(NAME test_real COMMAND test_real)
 
+    add_executable(test_hier_refs tests/test_hier_refs.c)
+    target_include_directories(test_hier_refs PRIVATE tests)
+    target_link_libraries(test_hier_refs PRIVATE qsim)
+    add_test(NAME test_hier_refs COMMAND test_hier_refs)
+
     add_executable(test_bug12_diag tests/test_bug12_diag.c)
     target_include_directories(test_bug12_diag PRIVATE tests)
     target_link_libraries(test_bug12_diag PRIVATE qsim)
