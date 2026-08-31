@@ -18,8 +18,9 @@ locations so each fix has a starting point.
 (`input wire [63:0] pmpaddr [0:7]` — parse, connect, indexed read/write incl.
 `arr[i][msb:lsb]`; unblocks `u74_pmp.v`, `u74_l1d_cache.v`, part of
 `u74_csr_unit.v`/`u74_core_top.v`). U74 compile count: 18/21. Remaining:
-`\`define` macro refs (core_top) and a context-dependent part-select-NBA
-gap in csr_unit. #3 (real) FIXED (commit `65871bc`): decls, float literals,
+\`define refs (core_top) and a context-dependent case-arm gap (csr_unit/fpu)
+— all fixed in `a578a11` (\`define refs, `for (integer i = 0; ...)`, `longint`):
+**all 21 U74 RTL modules compile** (was 15/19 at evaluation). #3 (real) FIXED (commit `65871bc`): decls, float literals,
 IEEE arithmetic, `$bitstoreal`/`$realtobits`/`$sqrt`/`$floor`/`$ceil`/`$rtoi`/
 `$itor`, plus a pre-existing 64-bit-literal truncation bug on Windows.
 u74_fpu.v now parses to line 274 (a deep-nesting case-arm block-decl issue).
