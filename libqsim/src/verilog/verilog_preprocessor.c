@@ -317,6 +317,42 @@ static void pp_substitute_macros(verilog_preprocessor_t *pp)
 
     while (p < end) {
         char c = *p;
+        if (c == '`') {
+            /* Verilog macro reference: `NAME — substitute if defined. */
+            const char *id_start = p + 1;
+            const char *q = id_start;
+            while (q < end && (isalnum(*q) || *q == '_'))
+                q++;
+            size_t id_len = (size_t)(q - id_start);
+            int found = 0;
+            if (id_len > 0) {
+                for (int i = 0; i < pp->macro_count; i++) {
+                    if (id_len == strlen(pp->macros[i].name) &&
+                        memcmp(id_start, pp->macros[i].name, id_len) == 0) {
+                        char *ev = expand_macro(pp, pp->macros[i].name, 0);
+                        if (ev) {
+                            size_t elen = strlen(ev);
+                            if (len + elen + 1 > cap) {
+                                cap = (len + elen + 1) * 2;
+                                char *nb = realloc(out, cap);
+                                if (!nb) { free(ev); free(out); return; }
+                                out = nb;
+                            }
+                            memcpy(out + len, ev, elen);
+                            len += elen;
+                            free(ev);
+                        }
+                        found = 1;
+                        break;
+                    }
+                }
+            }
+            if (found) { p = q; continue; }
+            /* Not a macro reference — emit the backtick as-is. */
+            out[len++] = '`';
+            p++;
+            continue;
+        }
         if (isalpha(c) || c == '_' || c == '$') {
             const char *id_start = p;
             p++;

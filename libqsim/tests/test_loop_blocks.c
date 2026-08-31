@@ -124,6 +124,17 @@ int main(void) {
         " always @(posedge clk) cnt=cnt+1;\n"
         " initial #45 $stop; endmodule\n",
         "cnt", "1010", 50);
+    /* Inline loop-variable declaration: for (integer i = 0; ...) — the
+     * FPU/CSR style. sum=0+1+2+3+4=10 -> LSB-first 32-bit. */
+    run("for_integer",
+        "module t; integer sum; initial begin sum=0;\n"
+        " for (integer i = 0; i < 5; i = i + 1) sum = sum + i; end endmodule\n",
+        "sum", "01010000000000000000000000000000");
+    /* longint (64-bit integer) decl, used in a block. */
+    run("longint_decl",
+        "module t; longint li; integer s; initial begin\n"
+        " li = 64'd7; s = li; end endmodule\n",
+        "s", "11100000000000000000000000000000");
 
     printf("\n%d/%d passed\n", tests - fails, tests);
     return fails ? 1 : 0;

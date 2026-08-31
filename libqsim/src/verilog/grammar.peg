@@ -25,7 +25,7 @@ interface_decl <- KW_INTERFACE ID
     KW_ENDINTERFACE
     { create_ports_from_named(); }
 
-interface_body <- ( attr_list? ( net_decl / reg_decl / logic_decl / integer_decl
+interface_body <- ( attr_list? ( net_decl / reg_decl / logic_decl / integer_decl / real_decl / longint_decl
                    / modport_decl ) )*
 
 modport_decl <- KW_MODPORT ID
@@ -74,7 +74,7 @@ port_item <- KW_INPUT
     { _parse_add_port_signed(_parse_saved, UIR_PORT_INOUT, _parse_range_msb, _parse_range_lsb, _parse_port_sig_type); _parse_range_msb = 0; _parse_range_lsb = 0; free(_parse_saved); _parse_saved = NULL; }
   / ID { add_bare_port_name(yytext); _parse_range_msb = 0; _parse_range_lsb = 0; }
 
-module_body <- ( attr_list? ( net_decl / reg_decl / logic_decl / integer_decl / real_decl / input_decl
+module_body <- ( attr_list? ( net_decl / reg_decl / logic_decl / integer_decl / real_decl / longint_decl / input_decl
                / output_decl / inout_decl / assign_stmt
                / always_stmt / always_comb_stmt / always_ff_stmt / always_latch_stmt / initial_stmt
                / specify_stmt
@@ -212,6 +212,11 @@ integer_decl <- KW_INTEGER ID
 real_decl <- KW_REAL ID
     { decl_real(yytext); }
     ( COMMA ID { decl_real(yytext); } )*
+    SEMI
+
+longint_decl <- KW_LONGINT ID
+    { decl_reg(yytext, 64, 0); }
+    ( COMMA ID { decl_reg(yytext, 64, 0); } )*
     SEMI
 
 param_decl <- ( KW_PARAMETER / KW_LOCALPARAM ) param_item ( COMMA param_item )* SEMI
@@ -497,10 +502,10 @@ system_task <- SYS_READMEMH LPAREN STRING { _parse_saved = parse_strdup(yytext);
 
 seq_block <- KW_BEGIN COLON ID { begin_named_block(yytext);
                                   _parse_block_name = parse_strdup(yytext); }
-    ( reg_decl / integer_decl / real_decl )*
+    ( reg_decl / integer_decl / real_decl / longint_decl )*
     statement* KW_END { end_named_block(); }
   / KW_BEGIN
-    ( reg_decl / integer_decl / real_decl )*
+    ( reg_decl / integer_decl / real_decl / longint_decl )*
     statement* KW_END
 
 if_stmt <- KW_IF LPAREN expr RPAREN
@@ -537,7 +542,9 @@ default_item <- KW_DEFAULT COLON
     { do_case_default_finish(_parse_unit); }
 
 for_stmt <- KW_FOR LPAREN
-    blocking_assign { do_for_init_save(); } SEMI
+    ( KW_INTEGER ID { decl_reg(yytext, 32, 0); _parse_assign_lhs = parse_strdup(yytext); }
+        ASSIGN expr { do_for_decl_init_save(); }
+    / blocking_assign { do_for_init_save(); } ) SEMI
     expr { do_for_cond_save(); } SEMI
     blocking_assign { do_for_step_save(); } RPAREN
     { do_for_body_enter(); }
@@ -581,8 +588,8 @@ task_decl <- KW_TASK ( KW_AUTOMATIC { _parse_decl_automatic = 1; } )? ID
     task_item_decl* seq_block KW_ENDTASK
     { finish_task(); }
 
-func_item_decl <- input_decl / reg_decl / integer_decl / real_decl
-task_item_decl <- input_decl / output_decl / inout_decl / reg_decl / integer_decl / real_decl
+func_item_decl <- input_decl / reg_decl / integer_decl / real_decl / longint_decl
+task_item_decl <- input_decl / output_decl / inout_decl / reg_decl / integer_decl / real_decl / longint_decl
 
 blocking_assign <-
     ( ID { _parse_assign_lhs = parse_strdup(yytext); _parse_multi_index_count = 0; }
@@ -888,6 +895,7 @@ KW_NEGEDGE    <- "negedge"      !alnum spacing
 KW_PARAMETER  <- "parameter"    !alnum spacing
 KW_LOCALPARAM <- "localparam"   !alnum spacing
 KW_REAL       <- "real"         !alnum spacing
+KW_LONGINT    <- "longint"      !alnum spacing
 KW_DEFAULT    <- "default"      !alnum spacing
 KW_FOREVER    <- "forever"      !alnum spacing
 KW_REPEAT     <- "repeat"       !alnum spacing

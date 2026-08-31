@@ -1341,6 +1341,26 @@ static void do_for_init_save(void) {
 }
 
 /* For-loop: pop condition from expression stack */
+/* for (integer i = expr; ...): build the init assign and save it. */
+static void do_for_decl_init_save(void) {
+    uir_node_t *rhs = expr_pop();
+    uir_node_t *lhs = NULL;
+    if (_parse_unit && _parse_assign_lhs) {
+        lhs = uir_make_ref(_parse_unit, _parse_assign_lhs, parse_loc());
+        if (lhs && rhs) {
+            uir_assign_t *a = (uir_assign_t *)uir_alloc_node(
+                _parse_unit, UIR_ASSIGN, sizeof(uir_assign_t), parse_loc());
+            if (a) {
+                a->lhs = lhs;
+                a->rhs = rhs;
+                a->delay = 0;
+                _parse_loop_init = (uir_node_t *)a;
+            }
+        }
+    }
+    free(_parse_assign_lhs); _parse_assign_lhs = NULL;
+}
+
 static void do_for_cond_save(void) {
     _parse_loop_cond = expr_pop();
 }
@@ -1388,6 +1408,7 @@ static void do_for_finish(void) {
     uir_loop_t *loop = (uir_loop_t *)uir_alloc_node(
         _parse_unit, UIR_LOOP, sizeof(uir_loop_t), parse_loc());
     if (loop) {
+                (void*)_parse_loop_init, (void*)_parse_loop_cond, (void*)_parse_loop_step);
         loop->init_stmt = _parse_loop_init;
         loop->condition = _parse_loop_cond;
         loop->step_stmt = _parse_loop_step;
