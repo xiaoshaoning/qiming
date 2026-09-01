@@ -359,13 +359,17 @@ static void do_delay_finish(void) {
         return;
     }
     uir_block_t *b = current_block();
-    if (!b || b->stmt_count == 0) {
+    if (!b) {
         _parse_assign_delay = NULL;
         return;
     }
-    /* Remove last statement from block */
-    uir_node_t *body = b->stmts[b->stmt_count - 1];
-    b->stmt_count--;
+    /* Remove last statement from block (may be none: "#5;" — an empty
+     * continuation — keep the delay with a NULL body). */
+    uir_node_t *body = NULL;
+    if (b->stmt_count > 0) {
+        body = b->stmts[b->stmt_count - 1];
+        b->stmt_count--;
+    }
 
     uir_delay_t *d = (uir_delay_t *)uir_alloc_node(_parse_unit, UIR_DELAY, sizeof(uir_delay_t), parse_loc());
     if (!d) { _parse_assign_delay = NULL; return; }
@@ -1408,7 +1412,6 @@ static void do_for_finish(void) {
     uir_loop_t *loop = (uir_loop_t *)uir_alloc_node(
         _parse_unit, UIR_LOOP, sizeof(uir_loop_t), parse_loc());
     if (loop) {
-                (void*)_parse_loop_init, (void*)_parse_loop_cond, (void*)_parse_loop_step);
         loop->init_stmt = _parse_loop_init;
         loop->condition = _parse_loop_cond;
         loop->step_stmt = _parse_loop_step;

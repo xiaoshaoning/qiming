@@ -510,6 +510,9 @@ static void pp_process_source(verilog_preprocessor_t *pp,
         while (eol < end && *eol != '\n') eol++;
 
         size_t line_len = (size_t)(eol - p);
+        /* Strip a trailing CR (CRLF sources) so identifiers/literals aren't
+         * poisoned by '\r' in normal (non-directive) lines. */
+        if (line_len > 0 && p[line_len - 1] == '\r') line_len--;
 
         /* Check for ` at start of line (after optional whitespace) */
         const char *line = p;

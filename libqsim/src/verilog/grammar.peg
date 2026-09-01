@@ -205,9 +205,12 @@ logic_decl <- KW_LOGIC { _parse_decl_signed = 0; } (KW_SIGNED { _parse_decl_sign
     SEMI
 
 integer_decl <- KW_INTEGER ID
-    { decl_reg(yytext, 32, 0); }
-    ( COMMA ID { decl_reg(yytext, 32, 0); } )*
+    { _parse_saved = parse_strdup(yytext); decl_reg(yytext, 32, 0); }
+    ( ASSIGN expr { do_decl_init_assign(_parse_saved); } )?
+    ( COMMA ID { free(_parse_saved); _parse_saved = parse_strdup(yytext); decl_reg(yytext, 32, 0); }
+      ( ASSIGN expr { do_decl_init_assign(_parse_saved); } )? )*
     SEMI
+    { free(_parse_saved); _parse_saved = NULL; }
 
 real_decl <- KW_REAL ID
     { decl_real(yytext); }
@@ -464,7 +467,7 @@ system_task <- SYS_READMEMH LPAREN STRING { _parse_saved = parse_strdup(yytext);
       free(_parse_saved); _parse_saved = NULL; }
   / SYS_DUMPFILE LPAREN STRING RPAREN SEMI
     { if (_parse_unit) append_stmt(uir_make_sys_task(_parse_unit, UIR_SYS_DUMPFILE, NULL, NULL, yytext, NULL, 0, parse_loc())); }
-  / SYS_DUMPVARS (LPAREN RPAREN)? SEMI
+  / SYS_DUMPVARS ( LPAREN expr { expr_pop(); } ( COMMA expr { expr_pop(); } )* RPAREN / LPAREN RPAREN )? SEMI
     { if (_parse_unit) append_stmt(uir_make_sys_task(_parse_unit, UIR_SYS_DUMPVARS, NULL, NULL, NULL, NULL, 0, parse_loc())); }
   / SYS_DUMPON (LPAREN RPAREN)? SEMI
     { if (_parse_unit) append_stmt(uir_make_sys_task(_parse_unit, UIR_SYS_DUMPON, NULL, NULL, NULL, NULL, 0, parse_loc())); }
@@ -692,7 +695,11 @@ bitxor_expr <- bitand_expr ( XOR bitand_expr
 bitand_expr <- eq_expr ( AND eq_expr
     { if (_parse_unit) do_binop(_parse_unit, UIR_OP_AND); } )*
 
-eq_expr <- rel_expr ( EQ rel_expr
+eq_expr <- rel_expr ( CASE_EQ rel_expr
+    { if (_parse_unit) do_binop(_parse_unit, UIR_OP_EQ); }  // qsim is 2-state: === = =
+    / CASE_NEQ rel_expr
+    { if (_parse_unit) do_binop(_parse_unit, UIR_OP_NEQ); }
+    / EQ rel_expr
     { if (_parse_unit) do_binop(_parse_unit, UIR_OP_EQ); }
     / NEQ rel_expr
     { if (_parse_unit) do_binop(_parse_unit, UIR_OP_NEQ); }
@@ -825,6 +832,10 @@ primary_expr <- LPAREN expr RPAREN
         { if (_parse_unit) do_func_call_expr(_parse_unit, _parse_func_call_name); free(_parse_func_call_name); _parse_func_call_name = NULL; }
     / ID { _parse_hier_name = parse_strdup(yytext); }
         ( DOT ID { hier_append_lhs(yytext); } )+
+        ( LBRACKET expr RBRACKET
+          { uir_node_t *_idx = expr_pop();
+            if (_parse_unit) expr_push(uir_make_ref_index(_parse_unit, _parse_assign_lhs, _idx, parse_loc()));
+            free(_parse_assign_lhs); _parse_assign_lhs = NULL; } )?
         { if (_parse_unit) expr_push(make_ref_implicit(_parse_unit, _parse_assign_lhs, parse_loc())); free(_parse_assign_lhs); _parse_assign_lhs = NULL; }
     / ID { if (_parse_unit) expr_push(make_ref_implicit(_parse_unit, yytext, parse_loc())); }
     / NUMBER { if (_parse_unit) expr_push(parse_number_literal(_parse_unit, yytext, parse_loc())); }
@@ -1003,6 +1014,8 @@ OR        <- '|' !'|' spacing
 XOR       <- '^' spacing
 TILDE     <- '~' spacing
 
+CASE_EQ   <- '===' spacing
+CASE_NEQ  <- '!==' spacing
 EQ        <- '==' spacing
 NEQ       <- '!=' spacing
 LE        <- '<=' spacing

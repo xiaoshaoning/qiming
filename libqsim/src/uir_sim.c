@@ -1100,9 +1100,14 @@ static void add_processes(uir_sim_context_t *ctx, uir_design_unit_t *unit,
 static void find_refs_in_node(uir_node_t *node, uir_sim_context_t *ctx,
                                 int **sigs, size_t *count, size_t *cap) {
     if (!node) return;
+    static int depth = 0;
+    if (++depth > 2000) {
+                depth--;
+        return;
+    }
     int idx;
     qsim_bit_vector_t *val;
-    switch (node->kind) {
+        switch (node->kind) {
         case UIR_REF: {
             uir_ref_t *ref = (uir_ref_t *)node;
             /* Traverse array index and part-select expressions */
@@ -1115,6 +1120,10 @@ static void find_refs_in_node(uir_node_t *node, uir_sim_context_t *ctx,
             for (size_t _mi = 0; _mi < ref->multi_idx_count; _mi++)
                 find_refs_in_node(ref->multi_index[_mi], ctx, sigs, count, cap);
             idx = -1;
+            if (!ref->name) {
+                                depth--;
+                return;
+            }
             if (tls_prefix[0]) {
                 char prefixed[520];
                 snprintf(prefixed, sizeof(prefixed), "%s.%s",
@@ -1279,6 +1288,7 @@ static void find_refs_in_node(uir_node_t *node, uir_sim_context_t *ctx,
         }
         default: break;
     }
+    depth--;
 }
 
 /* Collect continuous assigns from all units */
@@ -1340,8 +1350,17 @@ static int expr_is_real(uir_sim_context_t *ctx, uir_node_t *node) {
                 uir_design_unit_t *u = ctx->units[ui];
                 for (size_t pi = 0; pi < u->param_count; pi++) {
                     if (u->params[pi].hier_path &&
-                        strcmp(u->params[pi].hier_path, ref->name) == 0)
-                        return expr_is_real(ctx, u->params[pi].value);
+                        strcmp(u->params[pi].hier_path, ref->name) == 0) {
+                        /* Self-referencing param (P = P) would recurse forever. */
+                        uir_node_t *pv = u->params[pi].value;
+                        if (pv && pv->kind == UIR_REF) {
+                            uir_ref_t *pr = (uir_ref_t *)pv;
+                            if (pr->index || pr->part_hi || pr->part_lo ||
+                                (pr->name && strcmp(pr->name, ref->name) == 0))
+                                break;
+                        }
+                        return expr_is_real(ctx, pv);
+                    }
                 }
             }
         }
@@ -3257,15 +3276,21 @@ static qsim_bit_vector_t *eval_qualified_func_call(
 
 static qsim_bit_vector_t *eval_expr(uir_sim_context_t *ctx, uir_node_t *node) {
     if (!node) return qsim_bit_vector_from_state(1, QSIM_X);
-
+    static int edepth = 0;
+    if (++edepth > 2000) {
+        edepth--;
+        return qsim_bit_vector_from_state(1, QSIM_X);
+    }
     switch (node->kind) {
         case UIR_LITERAL: {
             uir_literal_t *lit = (uir_literal_t *)node;
-            return qsim_bit_vector_clone(lit->value);
+            edepth--; return qsim_bit_vector_clone(lit->value);
         }
         case UIR_REF: {
             uir_ref_t *ref = (uir_ref_t *)node;
             int idx = -1;
+            if (edepth > 1450 && ref->name) {
+                            }
             if (tls_prefix[0]) {
                 char prefixed[520];
                 snprintf(prefixed, sizeof(prefixed), "%s.%s",
@@ -3273,6 +3298,10 @@ static qsim_bit_vector_t *eval_expr(uir_sim_context_t *ctx, uir_node_t *node) {
                 idx = find_signal_idx(ctx, prefixed);
             }
             if (idx < 0) idx = find_signal_idx(ctx, ref->name);
+            if (edepth > 1450 && ref->name && idx >= 0) {
+                            }
+            if (edepth > 1450 && ref->name && idx < 0) {
+                            }
             if (idx < 0) {
                 /* Not a signal — check if this is a module parameter reference */
                 if (ref->name) {
@@ -3281,7 +3310,17 @@ static qsim_bit_vector_t *eval_expr(uir_sim_context_t *ctx, uir_node_t *node) {
                         for (size_t pi = 0; pi < u->param_count; pi++) {
                             if (u->params[pi].hier_path &&
                                 strcmp(u->params[pi].hier_path, ref->name) == 0) {
-                                return eval_expr(ctx, u->params[pi].value);
+                                /* A parameter whose value is a bare ref to
+                                 * itself (or another param) would recurse
+                                 * forever here; resolve one level only. */
+                                uir_node_t *pv = u->params[pi].value;
+                                if (pv && pv->kind == UIR_REF) {
+                                    uir_ref_t *pr = (uir_ref_t *)pv;
+                                    if (pr->index || pr->part_hi || pr->part_lo ||
+                                        (pr->name && strcmp(pr->name, ref->name) == 0))
+                                        break;
+                                }
+                                edepth--; return eval_expr(ctx, pv);
                             }
                         }
                     }
@@ -3293,10 +3332,10 @@ static qsim_bit_vector_t *eval_expr(uir_sim_context_t *ctx, uir_node_t *node) {
                         fc.name = ref->name;
                         fc.args = &ref->part_hi;
                         fc.arg_count = 1;
-                        return numeric_std_eval_func(ctx, nk, &fc);
+                        edepth--; return numeric_std_eval_func(ctx, nk, &fc);
                     }}
                 }
-                return qsim_bit_vector_from_state(1, QSIM_X);
+                edepth--; return qsim_bit_vector_from_state(1, QSIM_X);
             }
             ctx->current_is_signed = ctx->signals[idx].is_signed;
 
@@ -3307,7 +3346,7 @@ static qsim_bit_vector_t *eval_expr(uir_sim_context_t *ctx, uir_node_t *node) {
                 if (!hi_val || !lo_val) {
                     if (hi_val) qsim_bit_vector_free(hi_val);
                     if (lo_val) qsim_bit_vector_free(lo_val);
-                    return qsim_bit_vector_from_state(1, QSIM_X);
+                    edepth--; return qsim_bit_vector_from_state(1, QSIM_X);
                 }
                 uint32_t hi = 0, lo = 0;
                 for (uint32_t i = 0; i < hi_val->width && i < 32; i++)
@@ -3340,7 +3379,7 @@ static qsim_bit_vector_t *eval_expr(uir_sim_context_t *ctx, uir_node_t *node) {
                 if (!result) return qsim_bit_vector_from_state(part_w, QSIM_X);
                 for (uint32_t i = 0; i < part_w && (start_bit + i) < full->width; i++)
                     qsim_bit_set(result, i, qsim_bit_get(full, start_bit + i));
-                return result;
+                edepth--; return result;
             }
 
             if (ref->multi_idx_count > 0) {
@@ -3383,13 +3422,13 @@ static qsim_bit_vector_t *eval_expr(uir_sim_context_t *ctx, uir_node_t *node) {
                     bit_off += idx * stride;
                 }
                 if (idx_unknown)
-                    return qsim_bit_vector_from_state(elem_width, QSIM_X);
+                    edepth--; return qsim_bit_vector_from_state(elem_width, QSIM_X);
                 qsim_bit_vector_t *full = ctx->signals[idx].value;
                 qsim_bit_vector_t *result = qsim_bit_vector_alloc(elem_width);
                 if (!result) return qsim_bit_vector_from_state(elem_width, QSIM_X);
                 for (uint32_t i = 0; i < elem_width && (bit_off + i) < full->width; i++)
                     qsim_bit_set(result, i, qsim_bit_get(full, bit_off + i));
-                return result;
+                edepth--; return result;
             }
 
             if (ref->index) {
@@ -3421,7 +3460,7 @@ static qsim_bit_vector_t *eval_expr(uir_sim_context_t *ctx, uir_node_t *node) {
                 if (is_array && sig_node->kind == UIR_SIGNAL) {
                     uir_signal_t *sig = (uir_signal_t *)sig_node;
                     if (elem_idx >= sig->array_size)
-                        return qsim_bit_vector_from_state(result_width, QSIM_X);
+                        edepth--; return qsim_bit_vector_from_state(result_width, QSIM_X);
                 }
                 uint32_t bit_off = is_array ? (elem_idx * elem_width) : elem_idx;
                 qsim_bit_vector_t *full = ctx->signals[idx].value;
@@ -3429,9 +3468,9 @@ static qsim_bit_vector_t *eval_expr(uir_sim_context_t *ctx, uir_node_t *node) {
                 if (!result) return qsim_bit_vector_from_state(result_width, QSIM_X);
                 for (uint32_t i = 0; i < result_width && (bit_off + i) < full->width; i++)
                     qsim_bit_set(result, i, qsim_bit_get(full, bit_off + i));
-                return result;
+                edepth--; return result;
             }
-            return qsim_bit_vector_clone(ctx->signals[idx].value);
+            edepth--; return qsim_bit_vector_clone(ctx->signals[idx].value);
         }
         case UIR_EXPR_BINARY: {
             uir_expr_t *expr = (uir_expr_t *)node;
@@ -3442,7 +3481,7 @@ static qsim_bit_vector_t *eval_expr(uir_sim_context_t *ctx, uir_node_t *node) {
             if (!a || !b) {
                 if (a) qsim_bit_vector_free(a);
                 if (b) qsim_bit_vector_free(b);
-                return qsim_bit_vector_from_state(1, QSIM_X);
+                edepth--; return qsim_bit_vector_from_state(1, QSIM_X);
             }
             /* Real arithmetic: IEEE-754 double math when either operand is
              * real (signals, literals, sys funcs propagate the type). */
@@ -3477,14 +3516,14 @@ static qsim_bit_vector_t *eval_expr(uir_sim_context_t *ctx, uir_node_t *node) {
                 }
                 qsim_bit_vector_free(a);
                 qsim_bit_vector_free(b);
-                return r;
+                edepth--; return r;
             }
             int signed_comp = a_signed || b_signed;
             qsim_bit_vector_t *r = bv_binary_op(a, b, expr->op.bin_op, ctx->current_context_width, signed_comp);
             ctx->current_is_signed = signed_comp;
             qsim_bit_vector_free(a);
             qsim_bit_vector_free(b);
-            return r;
+            edepth--; return r;
         }
         case UIR_EXPR_UNARY: {
             uir_expr_t *expr = (uir_expr_t *)node;
@@ -3499,13 +3538,13 @@ static qsim_bit_vector_t *eval_expr(uir_sim_context_t *ctx, uir_node_t *node) {
                 for (uint32_t i = 0; i < target_w; i++)
                     qsim_bit_set(r, i, qsim_bit_get(a, i % a->width));
                 qsim_bit_vector_free(a);
-                return r;
+                edepth--; return r;
             }
             qsim_bit_vector_t *a = eval_expr(ctx, expr->operand_a);
             if (!a) return qsim_bit_vector_from_state(1, QSIM_X);
             qsim_bit_vector_t *r = bv_unary_op(a, expr->op.un_op);
             qsim_bit_vector_free(a);
-            return r;
+            edepth--; return r;
         }
         case UIR_COND: {
             uir_cond_t *cond = (uir_cond_t *)node;
@@ -3529,7 +3568,7 @@ static qsim_bit_vector_t *eval_expr(uir_sim_context_t *ctx, uir_node_t *node) {
                 if (t) qsim_bit_vector_free(t);
                 if (e) qsim_bit_vector_free(e);
             }
-            return r;
+            edepth--; return r;
         }
         case UIR_FUNC_CALL: {
             uir_func_call_t *fc = (uir_func_call_t *)node;
@@ -3544,14 +3583,14 @@ static qsim_bit_vector_t *eval_expr(uir_sim_context_t *ctx, uir_node_t *node) {
             {
                 const vhdl_builtin_func_t *builtin = vhdl_lookup_builtin_func(fc->name);
                 if (builtin)
-                    return eval_vhdl_builtin_func(ctx, fc, builtin);
+                    edepth--; return eval_vhdl_builtin_func(ctx, fc, builtin);
             }
             /* Check for TEXTIO builtin functions */
             if (strcmp(fc->name, "endfile") == 0) {
                 int eof = textio_endfile(ctx, fc);
                 qsim_bit_vector_t *r = qsim_bit_vector_alloc(1);
                 qsim_bit_set(r, 0, eof ? QSIM_VAL_1 : QSIM_VAL_0);
-                return r;
+                edepth--; return r;
             }
             /* Find matching function frame */
             func_frame_t *frame = NULL;
@@ -3562,7 +3601,7 @@ static qsim_bit_vector_t *eval_expr(uir_sim_context_t *ctx, uir_node_t *node) {
                 }
             }
             if (!frame || !frame->def->is_function)
-                return qsim_bit_vector_from_state(1, QSIM_X);
+                edepth--; return qsim_bit_vector_from_state(1, QSIM_X);
 
             uir_func_t *ft = frame->def;
 
@@ -3629,7 +3668,7 @@ static qsim_bit_vector_t *eval_expr(uir_sim_context_t *ctx, uir_node_t *node) {
             strncpy(tls_prefix, saved_prefix, sizeof(tls_prefix) - 1);
 
             if (result) return result;
-            return qsim_bit_vector_from_state(1, QSIM_X);
+            edepth--; return qsim_bit_vector_from_state(1, QSIM_X);
         }
         case UIR_SYS_FUNC_EXPR: {
             uir_sys_func_expr_t *sf = (uir_sys_func_expr_t *)node;
@@ -3637,16 +3676,16 @@ static qsim_bit_vector_t *eval_expr(uir_sim_context_t *ctx, uir_node_t *node) {
                 case UIR_SYS_FUNC_SIGNED:
                     ctx->current_is_signed = 1;
                     if (sf->arg_count > 0 && sf->args[0])
-                        return eval_expr(ctx, sf->args[0]);
-                    return qsim_bit_vector_from_state(1, QSIM_X);
+                        edepth--; return eval_expr(ctx, sf->args[0]);
+                    edepth--; return qsim_bit_vector_from_state(1, QSIM_X);
                 case UIR_SYS_FUNC_UNSIGNED:
                     ctx->current_is_signed = 0;
                     if (sf->arg_count > 0 && sf->args[0])
-                        return eval_expr(ctx, sf->args[0]);
-                    return qsim_bit_vector_from_state(1, QSIM_X);
+                        edepth--; return eval_expr(ctx, sf->args[0]);
+                    edepth--; return qsim_bit_vector_from_state(1, QSIM_X);
                 case UIR_SYS_FUNC_CLOG2: {
                     if (sf->arg_count < 1 || !sf->args[0])
-                        return qsim_bit_vector_from_state(32, QSIM_X);
+                        edepth--; return qsim_bit_vector_from_state(32, QSIM_X);
                     qsim_bit_vector_t *val = eval_expr(ctx, sf->args[0]);
                     if (!val) return qsim_bit_vector_from_state(32, QSIM_X);
                     uint64_t v = 0;
@@ -3654,7 +3693,7 @@ static qsim_bit_vector_t *eval_expr(uir_sim_context_t *ctx, uir_node_t *node) {
                         qsim_value_t b = qsim_bit_get(val, i);
                         if (b.state == QSIM_X || b.state == QSIM_Z) {
                             qsim_bit_vector_free(val);
-                            return qsim_bit_vector_from_state(32, QSIM_X);
+                            edepth--; return qsim_bit_vector_from_state(32, QSIM_X);
                         }
                         if (b.state == QSIM_1) v |= (1ULL << i);
                     }
@@ -3662,7 +3701,7 @@ static qsim_bit_vector_t *eval_expr(uir_sim_context_t *ctx, uir_node_t *node) {
                     if (v <= 1) {
                         qsim_bit_vector_t *r = qsim_bit_vector_alloc(32);
                         if (r) for (int i = 0; i < 32; i++) qsim_bit_set(r, i, QSIM_VAL_0);
-                        return r;
+                        edepth--; return r;
                     }
                     v--;
                     uint32_t result = 0;
@@ -3671,7 +3710,7 @@ static qsim_bit_vector_t *eval_expr(uir_sim_context_t *ctx, uir_node_t *node) {
                         qsim_bit_vector_t *r = qsim_bit_vector_alloc(32);
                         if (r) for (uint32_t i = 0; i < 32; i++)
                             qsim_bit_set(r, i, (i < 64 && ((result >> i) & 1)) ? QSIM_VAL_1 : QSIM_VAL_0);
-                        return r;
+                        edepth--; return r;
                     }
                 }
                 case UIR_SYS_FUNC_TIME:
@@ -3679,7 +3718,7 @@ static qsim_bit_vector_t *eval_expr(uir_sim_context_t *ctx, uir_node_t *node) {
                     qsim_bit_vector_t *r = qsim_bit_vector_alloc(64);
                     if (r) for (uint32_t i = 0; i < 64; i++)
                         qsim_bit_set(r, i, (ctx->current_time >> i) & 1 ? QSIM_VAL_1 : QSIM_VAL_0);
-                    return r;
+                    edepth--; return r;
                 }
                 case UIR_SYS_FUNC_RANDOM: {
                     if (sf->arg_count > 0 && sf->args[0]) {
@@ -3699,21 +3738,21 @@ static qsim_bit_vector_t *eval_expr(uir_sim_context_t *ctx, uir_node_t *node) {
                     qsim_bit_vector_t *r = qsim_bit_vector_alloc(32);
                     if (r) for (uint32_t i = 0; i < 32; i++)
                         qsim_bit_set(r, i, (i < 64 && ((rv >> i) & 1)) ? QSIM_VAL_1 : QSIM_VAL_0);
-                    return r;
+                    edepth--; return r;
                 }
                 case UIR_SYS_FUNC_BITSTOREAL:
                 case UIR_SYS_FUNC_REALTOBITS: {
                     /* bitstoreal: int bits -> double (no data change, type
                      * flows); realtobits: double -> int bits (same). */
                     if (sf->arg_count > 0 && sf->args[0])
-                        return eval_expr(ctx, sf->args[0]);
-                    return qsim_bit_vector_from_state(64, QSIM_X);
+                        edepth--; return eval_expr(ctx, sf->args[0]);
+                    edepth--; return qsim_bit_vector_from_state(64, QSIM_X);
                 }
                 case UIR_SYS_FUNC_SQRT:
                 case UIR_SYS_FUNC_FLOOR:
                 case UIR_SYS_FUNC_CEIL: {
                     if (sf->arg_count < 1 || !sf->args[0])
-                        return qsim_bit_vector_from_state(64, QSIM_X);
+                        edepth--; return qsim_bit_vector_from_state(64, QSIM_X);
                     qsim_bit_vector_t *v = eval_expr(ctx, sf->args[0]);
                     if (!v) return qsim_bit_vector_from_state(64, QSIM_X);
                     double d = arg_to_double(ctx, sf->args[0], v);
@@ -3721,11 +3760,11 @@ static qsim_bit_vector_t *eval_expr(uir_sim_context_t *ctx, uir_node_t *node) {
                     if (sf->func_kind == UIR_SYS_FUNC_SQRT) d = sqrt(d);
                     else if (sf->func_kind == UIR_SYS_FUNC_FLOOR) d = floor(d);
                     else d = ceil(d);
-                    return double_to_bv(d);
+                    edepth--; return double_to_bv(d);
                 }
                 case UIR_SYS_FUNC_RTOI: {
                     if (sf->arg_count < 1 || !sf->args[0])
-                        return qsim_bit_vector_from_state(32, QSIM_X);
+                        edepth--; return qsim_bit_vector_from_state(32, QSIM_X);
                     qsim_bit_vector_t *v = eval_expr(ctx, sf->args[0]);
                     if (!v) return qsim_bit_vector_from_state(32, QSIM_X);
                     double d = arg_to_double(ctx, sf->args[0], v);
@@ -3734,25 +3773,25 @@ static qsim_bit_vector_t *eval_expr(uir_sim_context_t *ctx, uir_node_t *node) {
                     qsim_bit_vector_t *r = qsim_bit_vector_alloc(32);
                     if (r) for (uint32_t i = 0; i < 32; i++)
                         qsim_bit_set(r, i, ((uint64_t)iv >> i) & 1 ? QSIM_VAL_1 : QSIM_VAL_0);
-                    return r;
+                    edepth--; return r;
                 }
                 case UIR_SYS_FUNC_ITOR: {
                     if (sf->arg_count < 1 || !sf->args[0])
-                        return qsim_bit_vector_from_state(64, QSIM_X);
+                        edepth--; return qsim_bit_vector_from_state(64, QSIM_X);
                     qsim_bit_vector_t *v = eval_expr(ctx, sf->args[0]);
                     if (!v) return qsim_bit_vector_from_state(64, QSIM_X);
                     uint64_t bits = 0;
                     for (uint32_t i = 0; i < v->width && i < 64; i++)
                         if (qsim_bit_get(v, i).state == QSIM_1) bits |= (1ULL << i);
                     qsim_bit_vector_free(v);
-                    return double_to_bv((double)(int64_t)bits);
+                    edepth--; return double_to_bv((double)(int64_t)bits);
                 }
                 default:
-                    return qsim_bit_vector_from_state(32, QSIM_X);
+                    edepth--; return qsim_bit_vector_from_state(32, QSIM_X);
             }
         }
         default:
-            return qsim_bit_vector_from_state(1, QSIM_X);
+            edepth--; return qsim_bit_vector_from_state(1, QSIM_X);
     }
 }
 
@@ -3984,7 +4023,7 @@ static void check_and_trigger_impl(uir_sim_context_t *ctx, uint32_t sig_idx,
                                     int depth, int exec_processes) {
     /* Safety limit for cascaded continuous assigns */
     if (depth > 16) return;
-
+    
     /* ── Phase 1: Evaluate continuous assigns ──
      * For delay=0 (Verilog continuous assign): update target signal
      * directly (not via event queue) so processes see up-to-date values
@@ -4683,7 +4722,8 @@ static void exec_assign(uir_sim_context_t *ctx, uir_assign_t *assign) {
                  * not through the event queue, so subsequent statements
                  * in the same process see the new value. */
                 qsim_bit_vector_t *old_val = ctx->signals[lhs_idx].value;
-                ctx->signals[lhs_idx].value = qsim_bit_vector_clone(final_val ? final_val : rhs_val);
+                if (ctx->current_time <= 25 && lhs_idx < 5)
+                                    ctx->signals[lhs_idx].value = qsim_bit_vector_clone(final_val ? final_val : rhs_val);
                 /* Track last change time for timing check monitoring ($setup etc.) */
                 if (old_val && !qsim_bit_vector_eq(old_val, ctx->signals[lhs_idx].value))
                     ctx->signals[lhs_idx].last_change_time = ctx->current_time;
@@ -5200,6 +5240,12 @@ static void textio_free_lines(uir_sim_context_t *ctx) {
 
 static void exec_stmt(uir_sim_context_t *ctx, uir_node_t *stmt) {
     if (!stmt) return;
+    static int xdepth = 0;
+    if (++xdepth > 1500) {
+        xdepth--;
+        xdepth--;
+        xdepth--; return;
+    }
 
     /* Trace process body structure */
     /* Record line coverage */
@@ -5304,7 +5350,7 @@ static void exec_stmt(uir_sim_context_t *ctx, uir_node_t *stmt) {
                         }
                     }
                     if (stop_block)
-                        return;
+                        xdepth--; return;
                 }
             }
             if (block->name && block->name[0])
@@ -5578,7 +5624,7 @@ static void exec_stmt(uir_sim_context_t *ctx, uir_node_t *stmt) {
                 }
                 qsim_bit_vector_free(val);
             }
-            /* For always-without-sensitivity, re-execute the delay after each
+                        /* For always-without-sensitivity, re-execute the delay after each
              * body completion to create self-looping timing behavior. */
             schedule_stmt_event(ctx, ctx->current_time + n, d->body,
                                 d->always_loop, d->always_loop ? (uir_node_t *)d : NULL,
@@ -5626,10 +5672,10 @@ static void exec_stmt(uir_sim_context_t *ctx, uir_node_t *stmt) {
                  * the recursion depth; past it, fall back to event scheduling
                  * (a single loop's tail still runs to completion). */
                 if (ctx->loop_sync_budget > 0) {
-                    ctx->loop_sync_budget--;
+                                    ctx->loop_sync_budget--;
                     exec_stmt(ctx, lb->body);
                 } else {
-                    ctx->loop_sync_budget = LOOP_SYNC_BUDGET;
+                                    ctx->loop_sync_budget = LOOP_SYNC_BUDGET;
                     schedule_stmt_event(ctx, ctx->current_time, lb->body, 0, NULL,
                                         ctx->current_block_hier);
                 }
@@ -5769,6 +5815,7 @@ static void exec_stmt(uir_sim_context_t *ctx, uir_node_t *stmt) {
         case UIR_NEXT:   /* VHDL next — stub, no-op */
         case UIR_RETURN: /* VHDL return — stub, no-op */
             break;
+    xdepth--;
     }
 }
 
@@ -5809,11 +5856,11 @@ uir_sim_context_t *uir_sim_create(uir_design_unit_t **units, size_t count) {
 #define IS_TOPLEVEL(i) (!instantiated || !instantiated[i])
 
     /* Build signal table */
-    for (size_t i = 0; i < count; i++) {
+        for (size_t i = 0; i < count; i++) {
         if (units[i] && IS_TOPLEVEL(i))
             collect_signals(ctx, units[i], "", 0);
     }
-
+    
     /* Initialize hash table for O(1) signal name→index lookup */
     signal_ht_init(ctx);
 
@@ -5842,12 +5889,12 @@ uir_sim_context_t *uir_sim_create(uir_design_unit_t **units, size_t count) {
     /* Collect processes — only from top-level units;
      * add_processes recurses into instances so submodule processes
      * are reached with correct hierarchical prefix. */
-    for (size_t i = 0; i < count; i++) {
+        for (size_t i = 0; i < count; i++) {
         if (units[i] && IS_TOPLEVEL(i)) {
             add_processes(ctx, units[i], "");
         }
     }
-
+    
     /* Resolve auto-sensitivity for @(*) processes */
     for (size_t p = 0; p < ctx->process_count; p++) {
         uir_process_t *proc = ctx->processes[p];
@@ -5864,8 +5911,11 @@ uir_sim_context_t *uir_sim_create(uir_design_unit_t **units, size_t count) {
 
         int *ref_sigs = NULL;
         size_t ref_count = 0, ref_cap = 0;
+        if (ctx->process_prefixes[p][0]) {
+                    } else {
+                    }
         find_refs_in_node(proc->body, ctx, &ref_sigs, &ref_count, &ref_cap);
-
+        
         if (ctx->process_prefixes[p][0]) {
             strncpy(tls_prefix, saved_prefix, sizeof(tls_prefix) - 1);
             tls_prefix[sizeof(tls_prefix) - 1] = '\0';
@@ -5886,11 +5936,11 @@ uir_sim_context_t *uir_sim_create(uir_design_unit_t **units, size_t count) {
     }
 
     /* Collect continuous assigns */
-    for (size_t i = 0; i < count; i++) {
+        for (size_t i = 0; i < count; i++) {
         if (units[i] && IS_TOPLEVEL(i))
             add_cont_assigns(ctx, units[i], "");
     }
-
+    
     /* Collect UDP instances */
     for (size_t i = 0; i < count; i++) {
         if (units[i] && IS_TOPLEVEL(i))
@@ -5898,7 +5948,7 @@ uir_sim_context_t *uir_sim_create(uir_design_unit_t **units, size_t count) {
     }
 
     /* Wire up port connections from instances */
-    for (size_t i = 0; i < count; i++) {
+        for (size_t i = 0; i < count; i++) {
         if (units[i] && IS_TOPLEVEL(i))
             add_port_wires(ctx, units[i], "");
     }
@@ -6465,10 +6515,13 @@ static void initial_eval(uir_sim_context_t *ctx) {
         for (size_t p = 0; p < ctx->process_count; p++) {
             uir_process_t *proc = ctx->processes[p];
             if (proc->body) {
+                                if (ctx->process_prefixes[p][0] == 0 && p < 3) {
+                    uir_block_t *b = (uir_block_t *)proc->body;
+                                    }
                 strncpy(tls_prefix, ctx->process_prefixes[p], 255);
                 tls_pid = (int)p;
                 exec_stmt(ctx, proc->body);
-                tls_pid = -1;
+                                tls_pid = -1;
                 tls_prefix[0] = '\0';
             }
         }
@@ -6492,9 +6545,9 @@ static void initial_eval(uir_sim_context_t *ctx) {
                     }
                 }
                 if (changed) {
-                    check_and_trigger(ctx, (uint32_t)i, saved[i],
+                                        check_and_trigger(ctx, (uint32_t)i, saved[i],
                                       ctx->signals[i].value);
-                }
+                                    }
                 qsim_bit_vector_free(saved[i]);
             }
             free(saved);
@@ -7503,7 +7556,7 @@ int uir_sim_run(uir_sim_context_t *ctx, uint64_t duration) {
         uint64_t batch_time = ctx->event_head->time;
         uint32_t batch_delta = ctx->event_head->delta;
 
-        if (batch_time > end_time) break;
+                if (batch_time > end_time) break;
 
         /* Track delta iterations at the same time to detect combinatorial loops */
         if (batch_time != last_delta_time) {
@@ -7550,7 +7603,8 @@ int uir_sim_run(uir_sim_context_t *ctx, uint64_t duration) {
                 /* Stmt events: leader handles (serial) */
                 if (ev->is_stmt_event) {
                     /* Process stmt event directly (same as single-threaded path) */
-                    ctx->recording_mode = 1;
+                    if (ev->time <= 30)
+                                            ctx->recording_mode = 1;
                     ctx->recorded_count = 0;
                     exec_stmt(ctx, ev->stmt);
                     if (ev->loop_always && ev->owner_body)
@@ -7714,7 +7768,8 @@ int uir_sim_run(uir_sim_context_t *ctx, uint64_t duration) {
                     sim_event_t *ev = pop_event(ctx);
 
                     if (ev->is_stmt_event) {
-                        ctx->recording_mode = 1;
+                        if (ev->time <= 30)
+                                                    ctx->recording_mode = 1;
                         ctx->recorded_count = 0;
                         exec_stmt(ctx, ev->stmt);
                         if (ev->loop_always && ev->owner_body)
