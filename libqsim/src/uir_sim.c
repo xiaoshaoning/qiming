@@ -3277,7 +3277,7 @@ static qsim_bit_vector_t *eval_qualified_func_call(
 static qsim_bit_vector_t *eval_expr(uir_sim_context_t *ctx, uir_node_t *node) {
     if (!node) return qsim_bit_vector_from_state(1, QSIM_X);
     static int edepth = 0;
-    if (++edepth > 2000) {
+    if (++edepth > 1000) {
         edepth--;
         return qsim_bit_vector_from_state(1, QSIM_X);
     }
