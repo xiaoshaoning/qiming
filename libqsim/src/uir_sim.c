@@ -3274,23 +3274,34 @@ static qsim_bit_vector_t *eval_qualified_func_call(
     return NULL;
 }
 
+static qsim_bit_vector_t *eval_expr_body(uir_sim_context_t *ctx, uir_node_t *node);
+
+/* Depth-guarded wrapper around eval_expr_body. The body has many early
+ * return paths; keeping the counter inside it leaked depth (several paths
+ * skipped the decrement), so after enough evaluations the guard tripped and
+ * every subsequent expression evaluated to 1-bit X. Here the counter is
+ * balanced on every path by construction. */
 static qsim_bit_vector_t *eval_expr(uir_sim_context_t *ctx, uir_node_t *node) {
-    if (!node) return qsim_bit_vector_from_state(1, QSIM_X);
     static int edepth = 0;
     if (++edepth > 1000) {
         edepth--;
         return qsim_bit_vector_from_state(1, QSIM_X);
     }
+    qsim_bit_vector_t *r = eval_expr_body(ctx, node);
+    edepth--;
+    return r;
+}
+
+static qsim_bit_vector_t *eval_expr_body(uir_sim_context_t *ctx, uir_node_t *node) {
+    if (!node) return qsim_bit_vector_from_state(1, QSIM_X);
     switch (node->kind) {
         case UIR_LITERAL: {
             uir_literal_t *lit = (uir_literal_t *)node;
-            edepth--; return qsim_bit_vector_clone(lit->value);
+            return qsim_bit_vector_clone(lit->value);
         }
         case UIR_REF: {
             uir_ref_t *ref = (uir_ref_t *)node;
             int idx = -1;
-            if (edepth > 1450 && ref->name) {
-                            }
             if (tls_prefix[0]) {
                 char prefixed[520];
                 snprintf(prefixed, sizeof(prefixed), "%s.%s",
@@ -3298,10 +3309,6 @@ static qsim_bit_vector_t *eval_expr(uir_sim_context_t *ctx, uir_node_t *node) {
                 idx = find_signal_idx(ctx, prefixed);
             }
             if (idx < 0) idx = find_signal_idx(ctx, ref->name);
-            if (edepth > 1450 && ref->name && idx >= 0) {
-                            }
-            if (edepth > 1450 && ref->name && idx < 0) {
-                            }
             if (idx < 0) {
                 /* Not a signal — check if this is a module parameter reference */
                 if (ref->name) {
@@ -3320,7 +3327,7 @@ static qsim_bit_vector_t *eval_expr(uir_sim_context_t *ctx, uir_node_t *node) {
                                         (pr->name && strcmp(pr->name, ref->name) == 0))
                                         break;
                                 }
-                                edepth--; return eval_expr(ctx, pv);
+                                return eval_expr(ctx, pv);
                             }
                         }
                     }
@@ -3332,10 +3339,10 @@ static qsim_bit_vector_t *eval_expr(uir_sim_context_t *ctx, uir_node_t *node) {
                         fc.name = ref->name;
                         fc.args = &ref->part_hi;
                         fc.arg_count = 1;
-                        edepth--; return numeric_std_eval_func(ctx, nk, &fc);
+                        return numeric_std_eval_func(ctx, nk, &fc);
                     }}
                 }
-                edepth--; return qsim_bit_vector_from_state(1, QSIM_X);
+                return qsim_bit_vector_from_state(1, QSIM_X);
             }
             ctx->current_is_signed = ctx->signals[idx].is_signed;
 
@@ -3346,7 +3353,7 @@ static qsim_bit_vector_t *eval_expr(uir_sim_context_t *ctx, uir_node_t *node) {
                 if (!hi_val || !lo_val) {
                     if (hi_val) qsim_bit_vector_free(hi_val);
                     if (lo_val) qsim_bit_vector_free(lo_val);
-                    edepth--; return qsim_bit_vector_from_state(1, QSIM_X);
+                    return qsim_bit_vector_from_state(1, QSIM_X);
                 }
                 uint32_t hi = 0, lo = 0;
                 for (uint32_t i = 0; i < hi_val->width && i < 32; i++)
@@ -3379,7 +3386,7 @@ static qsim_bit_vector_t *eval_expr(uir_sim_context_t *ctx, uir_node_t *node) {
                 if (!result) return qsim_bit_vector_from_state(part_w, QSIM_X);
                 for (uint32_t i = 0; i < part_w && (start_bit + i) < full->width; i++)
                     qsim_bit_set(result, i, qsim_bit_get(full, start_bit + i));
-                edepth--; return result;
+                return result;
             }
 
             if (ref->multi_idx_count > 0) {
@@ -3422,13 +3429,13 @@ static qsim_bit_vector_t *eval_expr(uir_sim_context_t *ctx, uir_node_t *node) {
                     bit_off += idx * stride;
                 }
                 if (idx_unknown)
-                    edepth--; return qsim_bit_vector_from_state(elem_width, QSIM_X);
+                    return qsim_bit_vector_from_state(elem_width, QSIM_X);
                 qsim_bit_vector_t *full = ctx->signals[idx].value;
                 qsim_bit_vector_t *result = qsim_bit_vector_alloc(elem_width);
                 if (!result) return qsim_bit_vector_from_state(elem_width, QSIM_X);
                 for (uint32_t i = 0; i < elem_width && (bit_off + i) < full->width; i++)
                     qsim_bit_set(result, i, qsim_bit_get(full, bit_off + i));
-                edepth--; return result;
+                return result;
             }
 
             if (ref->index) {
@@ -3460,7 +3467,7 @@ static qsim_bit_vector_t *eval_expr(uir_sim_context_t *ctx, uir_node_t *node) {
                 if (is_array && sig_node->kind == UIR_SIGNAL) {
                     uir_signal_t *sig = (uir_signal_t *)sig_node;
                     if (elem_idx >= sig->array_size)
-                        edepth--; return qsim_bit_vector_from_state(result_width, QSIM_X);
+                        return qsim_bit_vector_from_state(result_width, QSIM_X);
                 }
                 uint32_t bit_off = is_array ? (elem_idx * elem_width) : elem_idx;
                 qsim_bit_vector_t *full = ctx->signals[idx].value;
@@ -3468,9 +3475,9 @@ static qsim_bit_vector_t *eval_expr(uir_sim_context_t *ctx, uir_node_t *node) {
                 if (!result) return qsim_bit_vector_from_state(result_width, QSIM_X);
                 for (uint32_t i = 0; i < result_width && (bit_off + i) < full->width; i++)
                     qsim_bit_set(result, i, qsim_bit_get(full, bit_off + i));
-                edepth--; return result;
+                return result;
             }
-            edepth--; return qsim_bit_vector_clone(ctx->signals[idx].value);
+            return qsim_bit_vector_clone(ctx->signals[idx].value);
         }
         case UIR_EXPR_BINARY: {
             uir_expr_t *expr = (uir_expr_t *)node;
@@ -3481,7 +3488,7 @@ static qsim_bit_vector_t *eval_expr(uir_sim_context_t *ctx, uir_node_t *node) {
             if (!a || !b) {
                 if (a) qsim_bit_vector_free(a);
                 if (b) qsim_bit_vector_free(b);
-                edepth--; return qsim_bit_vector_from_state(1, QSIM_X);
+                return qsim_bit_vector_from_state(1, QSIM_X);
             }
             /* Real arithmetic: IEEE-754 double math when either operand is
              * real (signals, literals, sys funcs propagate the type). */
@@ -3516,14 +3523,14 @@ static qsim_bit_vector_t *eval_expr(uir_sim_context_t *ctx, uir_node_t *node) {
                 }
                 qsim_bit_vector_free(a);
                 qsim_bit_vector_free(b);
-                edepth--; return r;
+                return r;
             }
             int signed_comp = a_signed || b_signed;
             qsim_bit_vector_t *r = bv_binary_op(a, b, expr->op.bin_op, ctx->current_context_width, signed_comp);
             ctx->current_is_signed = signed_comp;
             qsim_bit_vector_free(a);
             qsim_bit_vector_free(b);
-            edepth--; return r;
+            return r;
         }
         case UIR_EXPR_UNARY: {
             uir_expr_t *expr = (uir_expr_t *)node;
@@ -3538,13 +3545,13 @@ static qsim_bit_vector_t *eval_expr(uir_sim_context_t *ctx, uir_node_t *node) {
                 for (uint32_t i = 0; i < target_w; i++)
                     qsim_bit_set(r, i, qsim_bit_get(a, i % a->width));
                 qsim_bit_vector_free(a);
-                edepth--; return r;
+                return r;
             }
             qsim_bit_vector_t *a = eval_expr(ctx, expr->operand_a);
             if (!a) return qsim_bit_vector_from_state(1, QSIM_X);
             qsim_bit_vector_t *r = bv_unary_op(a, expr->op.un_op);
             qsim_bit_vector_free(a);
-            edepth--; return r;
+            return r;
         }
         case UIR_COND: {
             uir_cond_t *cond = (uir_cond_t *)node;
@@ -3568,7 +3575,7 @@ static qsim_bit_vector_t *eval_expr(uir_sim_context_t *ctx, uir_node_t *node) {
                 if (t) qsim_bit_vector_free(t);
                 if (e) qsim_bit_vector_free(e);
             }
-            edepth--; return r;
+            return r;
         }
         case UIR_FUNC_CALL: {
             uir_func_call_t *fc = (uir_func_call_t *)node;
@@ -3582,15 +3589,16 @@ static qsim_bit_vector_t *eval_expr(uir_sim_context_t *ctx, uir_node_t *node) {
             /* Check for built-in VHDL function (rising_edge, falling_edge) */
             {
                 const vhdl_builtin_func_t *builtin = vhdl_lookup_builtin_func(fc->name);
-                if (builtin)
-                    edepth--; return eval_vhdl_builtin_func(ctx, fc, builtin);
+                if (builtin) {
+                    return eval_vhdl_builtin_func(ctx, fc, builtin);
+                }
             }
             /* Check for TEXTIO builtin functions */
             if (strcmp(fc->name, "endfile") == 0) {
                 int eof = textio_endfile(ctx, fc);
                 qsim_bit_vector_t *r = qsim_bit_vector_alloc(1);
                 qsim_bit_set(r, 0, eof ? QSIM_VAL_1 : QSIM_VAL_0);
-                edepth--; return r;
+                return r;
             }
             /* Find matching function frame */
             func_frame_t *frame = NULL;
@@ -3601,7 +3609,7 @@ static qsim_bit_vector_t *eval_expr(uir_sim_context_t *ctx, uir_node_t *node) {
                 }
             }
             if (!frame || !frame->def->is_function)
-                edepth--; return qsim_bit_vector_from_state(1, QSIM_X);
+                return qsim_bit_vector_from_state(1, QSIM_X);
 
             uir_func_t *ft = frame->def;
 
@@ -3668,7 +3676,7 @@ static qsim_bit_vector_t *eval_expr(uir_sim_context_t *ctx, uir_node_t *node) {
             strncpy(tls_prefix, saved_prefix, sizeof(tls_prefix) - 1);
 
             if (result) return result;
-            edepth--; return qsim_bit_vector_from_state(1, QSIM_X);
+            return qsim_bit_vector_from_state(1, QSIM_X);
         }
         case UIR_SYS_FUNC_EXPR: {
             uir_sys_func_expr_t *sf = (uir_sys_func_expr_t *)node;
@@ -3676,16 +3684,16 @@ static qsim_bit_vector_t *eval_expr(uir_sim_context_t *ctx, uir_node_t *node) {
                 case UIR_SYS_FUNC_SIGNED:
                     ctx->current_is_signed = 1;
                     if (sf->arg_count > 0 && sf->args[0])
-                        edepth--; return eval_expr(ctx, sf->args[0]);
-                    edepth--; return qsim_bit_vector_from_state(1, QSIM_X);
+                        return eval_expr(ctx, sf->args[0]);
+                    return qsim_bit_vector_from_state(1, QSIM_X);
                 case UIR_SYS_FUNC_UNSIGNED:
                     ctx->current_is_signed = 0;
                     if (sf->arg_count > 0 && sf->args[0])
-                        edepth--; return eval_expr(ctx, sf->args[0]);
-                    edepth--; return qsim_bit_vector_from_state(1, QSIM_X);
+                        return eval_expr(ctx, sf->args[0]);
+                    return qsim_bit_vector_from_state(1, QSIM_X);
                 case UIR_SYS_FUNC_CLOG2: {
                     if (sf->arg_count < 1 || !sf->args[0])
-                        edepth--; return qsim_bit_vector_from_state(32, QSIM_X);
+                        return qsim_bit_vector_from_state(32, QSIM_X);
                     qsim_bit_vector_t *val = eval_expr(ctx, sf->args[0]);
                     if (!val) return qsim_bit_vector_from_state(32, QSIM_X);
                     uint64_t v = 0;
@@ -3693,7 +3701,7 @@ static qsim_bit_vector_t *eval_expr(uir_sim_context_t *ctx, uir_node_t *node) {
                         qsim_value_t b = qsim_bit_get(val, i);
                         if (b.state == QSIM_X || b.state == QSIM_Z) {
                             qsim_bit_vector_free(val);
-                            edepth--; return qsim_bit_vector_from_state(32, QSIM_X);
+                            return qsim_bit_vector_from_state(32, QSIM_X);
                         }
                         if (b.state == QSIM_1) v |= (1ULL << i);
                     }
@@ -3701,7 +3709,7 @@ static qsim_bit_vector_t *eval_expr(uir_sim_context_t *ctx, uir_node_t *node) {
                     if (v <= 1) {
                         qsim_bit_vector_t *r = qsim_bit_vector_alloc(32);
                         if (r) for (int i = 0; i < 32; i++) qsim_bit_set(r, i, QSIM_VAL_0);
-                        edepth--; return r;
+                        return r;
                     }
                     v--;
                     uint32_t result = 0;
@@ -3710,7 +3718,7 @@ static qsim_bit_vector_t *eval_expr(uir_sim_context_t *ctx, uir_node_t *node) {
                         qsim_bit_vector_t *r = qsim_bit_vector_alloc(32);
                         if (r) for (uint32_t i = 0; i < 32; i++)
                             qsim_bit_set(r, i, (i < 64 && ((result >> i) & 1)) ? QSIM_VAL_1 : QSIM_VAL_0);
-                        edepth--; return r;
+                        return r;
                     }
                 }
                 case UIR_SYS_FUNC_TIME:
@@ -3718,7 +3726,7 @@ static qsim_bit_vector_t *eval_expr(uir_sim_context_t *ctx, uir_node_t *node) {
                     qsim_bit_vector_t *r = qsim_bit_vector_alloc(64);
                     if (r) for (uint32_t i = 0; i < 64; i++)
                         qsim_bit_set(r, i, (ctx->current_time >> i) & 1 ? QSIM_VAL_1 : QSIM_VAL_0);
-                    edepth--; return r;
+                    return r;
                 }
                 case UIR_SYS_FUNC_RANDOM: {
                     if (sf->arg_count > 0 && sf->args[0]) {
@@ -3738,21 +3746,21 @@ static qsim_bit_vector_t *eval_expr(uir_sim_context_t *ctx, uir_node_t *node) {
                     qsim_bit_vector_t *r = qsim_bit_vector_alloc(32);
                     if (r) for (uint32_t i = 0; i < 32; i++)
                         qsim_bit_set(r, i, (i < 64 && ((rv >> i) & 1)) ? QSIM_VAL_1 : QSIM_VAL_0);
-                    edepth--; return r;
+                    return r;
                 }
                 case UIR_SYS_FUNC_BITSTOREAL:
                 case UIR_SYS_FUNC_REALTOBITS: {
                     /* bitstoreal: int bits -> double (no data change, type
                      * flows); realtobits: double -> int bits (same). */
                     if (sf->arg_count > 0 && sf->args[0])
-                        edepth--; return eval_expr(ctx, sf->args[0]);
-                    edepth--; return qsim_bit_vector_from_state(64, QSIM_X);
+                        return eval_expr(ctx, sf->args[0]);
+                    return qsim_bit_vector_from_state(64, QSIM_X);
                 }
                 case UIR_SYS_FUNC_SQRT:
                 case UIR_SYS_FUNC_FLOOR:
                 case UIR_SYS_FUNC_CEIL: {
                     if (sf->arg_count < 1 || !sf->args[0])
-                        edepth--; return qsim_bit_vector_from_state(64, QSIM_X);
+                        return qsim_bit_vector_from_state(64, QSIM_X);
                     qsim_bit_vector_t *v = eval_expr(ctx, sf->args[0]);
                     if (!v) return qsim_bit_vector_from_state(64, QSIM_X);
                     double d = arg_to_double(ctx, sf->args[0], v);
@@ -3760,11 +3768,11 @@ static qsim_bit_vector_t *eval_expr(uir_sim_context_t *ctx, uir_node_t *node) {
                     if (sf->func_kind == UIR_SYS_FUNC_SQRT) d = sqrt(d);
                     else if (sf->func_kind == UIR_SYS_FUNC_FLOOR) d = floor(d);
                     else d = ceil(d);
-                    edepth--; return double_to_bv(d);
+                    return double_to_bv(d);
                 }
                 case UIR_SYS_FUNC_RTOI: {
                     if (sf->arg_count < 1 || !sf->args[0])
-                        edepth--; return qsim_bit_vector_from_state(32, QSIM_X);
+                        return qsim_bit_vector_from_state(32, QSIM_X);
                     qsim_bit_vector_t *v = eval_expr(ctx, sf->args[0]);
                     if (!v) return qsim_bit_vector_from_state(32, QSIM_X);
                     double d = arg_to_double(ctx, sf->args[0], v);
@@ -3773,25 +3781,25 @@ static qsim_bit_vector_t *eval_expr(uir_sim_context_t *ctx, uir_node_t *node) {
                     qsim_bit_vector_t *r = qsim_bit_vector_alloc(32);
                     if (r) for (uint32_t i = 0; i < 32; i++)
                         qsim_bit_set(r, i, ((uint64_t)iv >> i) & 1 ? QSIM_VAL_1 : QSIM_VAL_0);
-                    edepth--; return r;
+                    return r;
                 }
                 case UIR_SYS_FUNC_ITOR: {
                     if (sf->arg_count < 1 || !sf->args[0])
-                        edepth--; return qsim_bit_vector_from_state(64, QSIM_X);
+                        return qsim_bit_vector_from_state(64, QSIM_X);
                     qsim_bit_vector_t *v = eval_expr(ctx, sf->args[0]);
                     if (!v) return qsim_bit_vector_from_state(64, QSIM_X);
                     uint64_t bits = 0;
                     for (uint32_t i = 0; i < v->width && i < 64; i++)
                         if (qsim_bit_get(v, i).state == QSIM_1) bits |= (1ULL << i);
                     qsim_bit_vector_free(v);
-                    edepth--; return double_to_bv((double)(int64_t)bits);
+                    return double_to_bv((double)(int64_t)bits);
                 }
                 default:
-                    edepth--; return qsim_bit_vector_from_state(32, QSIM_X);
+                    return qsim_bit_vector_from_state(32, QSIM_X);
             }
         }
         default:
-            edepth--; return qsim_bit_vector_from_state(1, QSIM_X);
+            return qsim_bit_vector_from_state(1, QSIM_X);
     }
 }
 
@@ -4722,8 +4730,7 @@ static void exec_assign(uir_sim_context_t *ctx, uir_assign_t *assign) {
                  * not through the event queue, so subsequent statements
                  * in the same process see the new value. */
                 qsim_bit_vector_t *old_val = ctx->signals[lhs_idx].value;
-                if (ctx->current_time <= 25 && lhs_idx < 5)
-                                    ctx->signals[lhs_idx].value = qsim_bit_vector_clone(final_val ? final_val : rhs_val);
+                ctx->signals[lhs_idx].value = qsim_bit_vector_clone(final_val ? final_val : rhs_val);
                 /* Track last change time for timing check monitoring ($setup etc.) */
                 if (old_val && !qsim_bit_vector_eq(old_val, ctx->signals[lhs_idx].value))
                     ctx->signals[lhs_idx].last_change_time = ctx->current_time;
@@ -6338,6 +6345,12 @@ int uir_sim_force_signal(uir_sim_context_t *ctx, const char *hier_path,
     }
 
     qsim_bit_vector_t *old_val = ctx->signals[idx].value;
+    /* Maintain prev_value so rising_edge/falling_edge (VHDL edge builtins)
+     * see the pre-force value. Without this, force-driven clocks never
+     * produce a detected edge. */
+    qsim_bit_vector_t *old_prev = ctx->signals[idx].prev_value;
+    ctx->signals[idx].prev_value = qsim_bit_vector_clone(old_val);
+    if (old_prev) qsim_bit_vector_free(old_prev);
     ctx->signals[idx].value = qsim_bit_vector_clone(value);
     qsim_bit_vector_free(adjusted);
 

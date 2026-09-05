@@ -192,9 +192,14 @@ subtype_decl <- KW_SUBTYPE ID_OR_KW
 concurrent_stmt <- process_stmt / concurrent_signal_assign / component_inst / with_select_assign / generate_stmt / function_decl / procedure_decl / assert_stmt / report_stmt
 
 concurrent_signal_assign <- ID
-    { _parse_saved = parse_strdup(yytext); }
+    { _parse_saved = parse_strdup(yytext); _parse_target_hi = NULL; _parse_target_lo = NULL; }
+    ( LPAREN expr direction expr RPAREN
+        { _parse_target_lo = expr_pop(); _parse_target_hi = expr_pop(); }
+    / LPAREN expr RPAREN
+        { _parse_target_hi = expr_pop(); _parse_target_lo = _parse_target_hi; }
+    )?
     LE expr SEMI
-    { if (_parse_unit) do_concurrent_signal_assign(_parse_unit); }
+    { if (_parse_unit) do_ext_sig_assign(_parse_unit); free(_parse_saved); _parse_saved = NULL; }
 
 # Component instantiation: label: comp_name port map (formal => actual, ...)
 # Also supports direct entity instantiation: label: entity work.comp_name port map(...)
@@ -295,7 +300,9 @@ choice <- KW_OTHERS / expr (KW_TO expr)?
 
 for_loop <- KW_FOR ID_OR_KW
     { _parse_saved = parse_strdup(yytext); }
-    KW_IN range KW_LOOP
+    KW_IN expr direction
+    { vhdl_for_dir_save(yytext); }
+    expr KW_LOOP
     { if (_parse_unit) vhdl_for_loop_enter(_parse_unit, _parse_saved); free(_parse_saved); _parse_saved = NULL; }
     stmt* KW_END KW_LOOP SEMI
     { if (_parse_unit) vhdl_for_loop_finish(_parse_unit); }

@@ -2104,6 +2104,20 @@ YY_ACTION(void) yy_1_wait_stmt(yycontext *yy, char *yytext, int yyleng)
 #undef yypos
 #undef yy
 }
+YY_ACTION(void) yy_4_for_loop(yycontext *yy, char *yytext, int yyleng)
+{
+#define __ yy->__
+#define yypos yy->__pos
+#define yythunkpos yy->__thunkpos
+  yyprintf((stderr, "do yy_4_for_loop\n"));
+  {
+#line 0
+   vhdl_for_dir_save(yytext); ;
+  }
+#undef yythunkpos
+#undef yypos
+#undef yy
+}
 YY_ACTION(void) yy_3_for_loop(yycontext *yy, char *yytext, int yyleng)
 {
 #define __ yy->__
@@ -2574,7 +2588,7 @@ YY_ACTION(void) yy_2_concurrent_signal_assign(yycontext *yy, char *yytext, int y
   yyprintf((stderr, "do yy_2_concurrent_signal_assign\n"));
   {
 #line 0
-   if (_parse_unit) do_concurrent_signal_assign(_parse_unit); ;
+   if (_parse_unit) do_ext_sig_assign(_parse_unit); free(_parse_saved); _parse_saved = NULL; ;
   }
 #undef yythunkpos
 #undef yypos
@@ -2588,7 +2602,7 @@ YY_ACTION(void) yy_1_concurrent_signal_assign(yycontext *yy, char *yytext, int y
   yyprintf((stderr, "do yy_1_concurrent_signal_assign\n"));
   {
 #line 0
-   _parse_saved = parse_strdup(yytext); ;
+   _parse_saved = parse_strdup(yytext); _parse_target_hi = NULL; _parse_target_lo = NULL; ;
   }
 #undef yythunkpos
 #undef yypos
@@ -5126,7 +5140,7 @@ YY_RULE(int) yy_wait_stmt(yycontext *yy)
 }
 YY_RULE(int) yy_for_loop(yycontext *yy)
 {  int yypos0= yy->__pos, yythunkpos0= yy->__thunkpos;
-  yyprintf((stderr, "%s\n", "for_loop"));  if (!yy_KW_FOR(yy)) goto l311;  if (!yy_ID_OR_KW(yy)) goto l311;  yyDo(yy, yy_1_for_loop, yy->__begin, yy->__end);  if (!yy_KW_IN(yy)) goto l311;  if (!yy_range(yy)) goto l311;  if (!yy_KW_LOOP(yy)) goto l311;  yyDo(yy, yy_2_for_loop, yy->__begin, yy->__end);
+  yyprintf((stderr, "%s\n", "for_loop"));  if (!yy_KW_FOR(yy)) goto l311;  if (!yy_ID_OR_KW(yy)) goto l311;  yyDo(yy, yy_1_for_loop, yy->__begin, yy->__end);  if (!yy_KW_IN(yy)) goto l311;  if (!yy_expr(yy)) goto l311;  if (!yy_direction(yy)) goto l311;  yyDo(yy, yy_4_for_loop, yy->__begin, yy->__end);  if (!yy_expr(yy)) goto l311;  if (!yy_KW_LOOP(yy)) goto l311;  yyDo(yy, yy_2_for_loop, yy->__begin, yy->__end);
   l312:;	
   {  int yypos313= yy->__pos, yythunkpos313= yy->__thunkpos;  if (!yy_stmt(yy)) goto l313;  goto l312;
   l313:;	  yy->__pos= yypos313; yy->__thunkpos= yythunkpos313;
@@ -5365,7 +5379,15 @@ YY_RULE(int) yy_component_inst(yycontext *yy)
 }
 YY_RULE(int) yy_concurrent_signal_assign(yycontext *yy)
 {  int yypos0= yy->__pos, yythunkpos0= yy->__thunkpos;
-  yyprintf((stderr, "%s\n", "concurrent_signal_assign"));  if (!yy_ID(yy)) goto l377;  yyDo(yy, yy_1_concurrent_signal_assign, yy->__begin, yy->__end);  if (!yy_LE(yy)) goto l377;  if (!yy_expr(yy)) goto l377;  if (!yy_SEMI(yy)) goto l377;  yyDo(yy, yy_2_concurrent_signal_assign, yy->__begin, yy->__end);
+  yyprintf((stderr, "%s\n", "concurrent_signal_assign"));  if (!yy_ID(yy)) goto l377;  yyDo(yy, yy_1_concurrent_signal_assign, yy->__begin, yy->__end);
+  {  int yypos500= yy->__pos, yythunkpos500= yy->__thunkpos;
+  {  int yypos501= yy->__pos, yythunkpos501= yy->__thunkpos;  if (!yy_LPAREN(yy)) goto l502;  if (!yy_expr(yy)) goto l502;  if (!yy_direction(yy)) goto l502;  if (!yy_expr(yy)) goto l502;  if (!yy_RPAREN(yy)) goto l502;  yyDo(yy, yy_2_signal_assign, yy->__begin, yy->__end);  goto l501;
+  l502:;  yy->__pos= yypos501; yy->__thunkpos= yythunkpos501;  if (!yy_LPAREN(yy)) goto l500;  if (!yy_expr(yy)) goto l500;  if (!yy_RPAREN(yy)) goto l500;  yyDo(yy, yy_3_signal_assign, yy->__begin, yy->__end);
+  }
+  l501:;  goto l503;
+  l500:;  yy->__pos= yypos500; yy->__thunkpos= yythunkpos500;
+  }
+  l503:;  if (!yy_LE(yy)) goto l377;  if (!yy_expr(yy)) goto l377;  if (!yy_SEMI(yy)) goto l377;  yyDo(yy, yy_2_concurrent_signal_assign, yy->__begin, yy->__end);
   yyprintf((stderr, "  ok   %s @ %s\n", "concurrent_signal_assign", yy->__buf+yy->__pos));
   return 1;
   l377:;	  yy->__pos= yypos0; yy->__thunkpos= yythunkpos0;

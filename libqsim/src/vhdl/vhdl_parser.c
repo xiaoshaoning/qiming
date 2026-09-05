@@ -692,30 +692,122 @@ static void vhdl_case_finish(uir_design_unit_t *unit) {
 
 /* ── For-loop helpers ── */
 
+/* VHDL `for i in a to b loop ...` needs real iteration: a loop variable,
+ * init (i := a), condition (i <= b) and step (i := i + 1), mirroring the
+ * Verilog loop lowering (augmented body + UIR_LOOP_BACK cycle). Previously
+ * the bounds were discarded, the body statements leaked into the enclosing
+ * block and the loop never iterated. */
+
+static uir_node_t *_for_lower = NULL;
+static uir_node_t *_for_upper = NULL;
+static int _for_dir = 1;              /* 1 = `to`, -1 = `downto` */
+static char *_for_id = NULL;
+static uir_block_t *_for_body = NULL;
+
+static void vhdl_for_dir_save(const char *txt) {
+    _for_dir = (txt && txt[0] == 'd') ? -1 : 1;   /* "downto" starts with d */
+}
+
 static void vhdl_for_loop_enter(uir_design_unit_t *unit, const char *id) {
     if (!unit) return;
-    _parse_saved = parse_strdup(id);
-    /* Body block is pushed by grammar action before parsing stmts */
+    _for_upper = expr_pop();          /* expr stack holds [.., lower, upper] */
+    _for_lower = expr_pop();
+    _for_body = uir_add_block(unit, 1);
+    push_stmt_block(_for_body);
+    free(_for_id);
+    _for_id = id ? parse_strdup(id) : NULL;
 }
 
 static void vhdl_for_loop_finish(uir_design_unit_t *unit) {
-    if (!unit) return;
+    pop_stmt_block();
+    if (!unit || !_for_lower || !_for_upper || !_for_body || !_for_id || !_for_id[0]) {
+        _for_lower = _for_upper = NULL; _for_dir = 1; _for_body = NULL;
+        free(_for_id); _for_id = NULL;
+        return;
+    }
 
-    /* Pop condition (range upper bound) and range lower bound from expr stack */
-    uir_node_t *upper = expr_pop();
-    uir_node_t *lower = expr_pop();
-    (void)upper;
-    (void)lower;
+    uir_loc_t loc = parse_loc();
+    uir_node_t *iref = uir_make_ref(unit, _for_id, loc);
+    if (!iref) { _for_lower = _for_upper = NULL; _for_body = NULL; return; }
 
-    uir_loop_t *loop = (uir_loop_t *)uir_alloc_node(unit, UIR_LOOP, sizeof(uir_loop_t), parse_loc());
-    if (!loop) return;
-    loop->init_stmt = NULL;
-    loop->condition = NULL;  /* simplified: unconditional loop body */
-    loop->step_stmt = NULL;
-    /* Body was on block stack, popped by grammar after loop stmts.
-     * At this point the body block has been filled by append_stmt calls. */
+    /* Loop variable: process-local VHDL variable signal (width 32).
+     * References in the body already spell the plain name, and exec
+     * resolves them under the process prefix, so a unit-level variable
+     * signal with the loop name works. */
+    if (!uir_find_signal(unit, _for_id))
+        uir_add_signal(unit, _for_id, UIR_SIG_VHDL_VARIABLE, 32, 0);
 
-    append_stmt((uir_node_t *)loop);
+    /* init: i := lower (blocking) */
+    uir_assign_t *init = (uir_assign_t *)uir_alloc_node(
+        unit, UIR_ASSIGN, sizeof(uir_assign_t), loc);
+    if (init) { init->lhs = iref; init->rhs = _for_lower; init->delay = 0; }
+
+    /* cond: i <= upper (`to`) / i >= upper (`downto`) */
+    uir_node_t *cond = (uir_node_t *)uir_make_binary(
+        unit, _for_dir > 0 ? UIR_OP_LE : UIR_OP_GE,
+        uir_make_ref(unit, _for_id, loc), _for_upper, loc);
+
+    /* step: i := i + 1 / i := i - 1 */
+    qsim_bit_vector_t *one_bv = qsim_bit_vector_from_state(32, QSIM_0);
+    uir_node_t *one_lit = NULL;
+    if (one_bv) {
+        qsim_bit_set(one_bv, 0, QSIM_VAL_1);
+        one_lit = (uir_node_t *)uir_make_literal(unit, one_bv, loc);
+    }
+    uir_assign_t *step = (uir_assign_t *)uir_alloc_node(
+        unit, UIR_ASSIGN, sizeof(uir_assign_t), loc);
+    if (step) {
+        step->lhs = uir_make_ref(unit, _for_id, loc);
+        step->rhs = one_lit ? (uir_node_t *)uir_make_binary(
+            unit, _for_dir > 0 ? UIR_OP_ADD : UIR_OP_SUB,
+            uir_make_ref(unit, _for_id, loc), one_lit, loc) : NULL;
+        step->delay = 0;
+    }
+
+    /* Augmented body: [body stmts, step, LoopBack{cond, aug}] */
+    uir_block_t *aug = uir_add_block(unit, 1);
+    if (!aug || !init || !cond || !step) {
+        _for_lower = _for_upper = NULL; _for_body = NULL;
+        free(_for_id); _for_id = NULL;
+        return;
+    }
+    for (size_t i = 0; i < _for_body->stmt_count; i++) {
+        uir_node_t **ns = realloc(aug->stmts,
+            (aug->stmt_count + 1) * sizeof(uir_node_t *));
+        if (!ns) break;
+        aug->stmts = ns;
+        aug->stmts[aug->stmt_count++] = _for_body->stmts[i];
+    }
+    _for_body->stmt_count = 0;
+    {   /* append step */
+        uir_node_t **ns = realloc(aug->stmts,
+            (aug->stmt_count + 1) * sizeof(uir_node_t *));
+        if (ns) { aug->stmts = ns; aug->stmts[aug->stmt_count++] = (uir_node_t *)step; }
+    }
+    uir_loop_back_t *lb = (uir_loop_back_t *)uir_alloc_node(
+        unit, UIR_LOOP_BACK, sizeof(uir_loop_back_t), loc);
+    if (lb) {
+        lb->condition = cond;
+        lb->body = (uir_node_t *)aug;
+        {   /* append LoopBack (closes the cycle) */
+            uir_node_t **ns = realloc(aug->stmts,
+                (aug->stmt_count + 1) * sizeof(uir_node_t *));
+            if (ns) { aug->stmts = ns; aug->stmts[aug->stmt_count++] = (uir_node_t *)lb; }
+        }
+    }
+
+    uir_loop_t *loop = (uir_loop_t *)uir_alloc_node(
+        unit, UIR_LOOP, sizeof(uir_loop_t), loc);
+    if (loop) {
+        loop->init_stmt = (uir_node_t *)init;
+        loop->condition = cond;
+        loop->step_stmt = (uir_node_t *)step;
+        loop->body = (uir_node_t *)aug;
+        append_stmt((uir_node_t *)loop);
+    }
+
+    _for_lower = _for_upper = NULL; _for_dir = 1; _for_body = NULL;
+    free(_for_id); _for_id = NULL;
 }
 
 /* ── Wait statement helpers ── */
