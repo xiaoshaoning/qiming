@@ -599,6 +599,13 @@ static void test_vhdl_assert_sim(void);
 static void test_vhdl_report_sim(void);
 static void test_vhdl_alias_sim(void);
 
+/* Regressions from force-driven clock verification of the R2^2SDF FFT
+ * (2026-09): force prev_value maintenance, VHDL for-loop iteration, and
+ * indexed-LHS concurrent assignment parse. */
+static void test_vhdl_force_rising_edge(void);
+static void test_vhdl_for_loop_iteration(void);
+static void test_vhdl_indexed_concurrent_assign_before_instance(void);
+
 /* TEXTIO tests */
 static void test_vhdl_textio_readline_sim(void);
 
@@ -2624,6 +2631,11 @@ void register_vhdl_simulator_tests(void)
     mu_run_test(test_vhdl_assert_sim);
     mu_run_test(test_vhdl_report_sim);
     mu_run_test(test_vhdl_alias_sim);
+
+    /* 23. Regressions from force-driven clock verification (FFT project) */
+    mu_run_test(test_vhdl_force_rising_edge);
+    mu_run_test(test_vhdl_for_loop_iteration);
+    mu_run_test(test_vhdl_indexed_concurrent_assign_before_instance);
     printf("\n");
 }
 
@@ -3573,3 +3585,197 @@ static void test_vhdl_alias_sim(void)
     uir_sim_destroy(sim);
     uir_destroy_design_unit(r.unit);
 }
+
+/* =================================================================
+ * 23. Regression: rising_edge() under session force.
+ * uir_sim_force_signal now maintains prev_value, so a force-driven
+ * 0->1 clock edge is seen by rising_edge (previously always X->1).
+ * ================================================================= */
+static void test_vhdl_force_rising_edge(void)
+{
+    const char *src =
+        "library ieee; use ieee.std_logic_1164.all;\n"
+        "entity reg1 is\n"
+        "  port (clk, rst_n, d: in std_logic; q: out std_logic);\n"
+        "end entity;\n"
+        "architecture rtl of reg1 is\n"
+        "begin\n"
+        "  proc: process (clk)\n"
+        "  begin\n"
+        "    if rising_edge(clk) then\n"
+        "      if rst_n = '0' then q <= '0';\n"
+        "      else q <= d;\n"
+        "      end if;\n"
+        "    end if;\n"
+        "  end process;\n"
+        "end architecture;\n";
+
+    qsim_session_t *sess = qsim_session_create();
+    mu_assert_not_null(sess);
+    mu_assert(qsim_session_compile_string(sess, "reg1.vhd", src) != 0,
+              "compile reg1");
+    mu_assert(qsim_session_elaborate(sess) != 0, "elaborate reg1");
+
+    qsim_value_t b1 = {QSIM_1, 0}, b0 = {QSIM_0, 0};
+    qsim_bit_vector_t one = {1, &b1}, zero = {1, &b0};
+
+    /* deassert reset, then a rising edge with d=1 must capture q<=1 */
+    qsim_session_force(sess, "rst_n", &zero);
+    qsim_session_force(sess, "clk", &zero);
+    qsim_session_step_time(sess, 5);
+    qsim_session_force(sess, "rst_n", &one);
+    qsim_session_force(sess, "d", &one);
+    qsim_session_force(sess, "clk", &one);
+    qsim_session_step_time(sess, 1);
+    qsim_session_force(sess, "clk", &zero);
+    qsim_session_step_time(sess, 1);
+
+    char *q = qsim_session_eval_str(sess, "q");
+    mu_assert_not_null(q);
+    mu_assert(q[0] == '1', "q captures d on force-driven rising edge");
+    free(q);
+    qsim_session_free(sess);
+}
+
+/* =================================================================
+ * 24. Regression: VHDL for ... loop iterates (bounds, loop variable,
+ * step). Previously the loop body leaked into the enclosing block,
+ * ran once, and `i` never advanced, so a shift register never shifted.
+ * ================================================================= */
+static void test_vhdl_for_loop_iteration(void)
+{
+    const char *src =
+        "library ieee; use ieee.std_logic_1164.all;\n"
+        "entity dl is\n"
+        "  port (clk, rst_n: in std_logic;\n"
+        "        din: in std_logic_vector(3 downto 0);\n"
+        "        dout: out std_logic_vector(3 downto 0));\n"
+        "end entity;\n"
+        "architecture rtl of dl is\n"
+        "  type t is array (0 to 3) of std_logic_vector(3 downto 0);\n"
+        "  signal d: t;\n"
+        "begin\n"
+        "  proc: process (clk)\n"
+        "  begin\n"
+        "    if rising_edge(clk) then\n"
+        "      if rst_n = '0' then\n"
+        "        for i in 0 to 3 loop\n"
+        "          d(i) <= \"0000\";\n"
+        "        end loop;\n"
+        "      else\n"
+        "        for i in 0 to 2 loop\n"
+        "          d(i) <= d(i + 1);\n"
+        "        end loop;\n"
+        "        d(3) <= din;\n"
+        "      end if;\n"
+        "    end if;\n"
+        "  end process;\n"
+        "  dout <= d(0);\n"
+        "end architecture;\n";
+
+    qsim_session_t *sess = qsim_session_create();
+    mu_assert_not_null(sess);
+    mu_assert(qsim_session_compile_string(sess, "dl.vhd", src) != 0,
+              "compile dl");
+    mu_assert(qsim_session_elaborate(sess) != 0, "elaborate dl");
+
+    qsim_value_t b1 = {QSIM_1, 0}, b0 = {QSIM_0, 0};
+    qsim_bit_vector_t one = {1, &b1}, zero = {1, &b0};
+
+    /* reset with a clock edge (processes are sensitive to clk only) */
+    qsim_session_force(sess, "rst_n", &zero);
+    qsim_session_force(sess, "clk", &zero);
+    qsim_session_step_time(sess, 5);
+    qsim_session_force(sess, "clk", &one);
+    qsim_session_step_time(sess, 1);
+    qsim_session_force(sess, "clk", &zero);
+    qsim_session_step_time(sess, 1);
+    qsim_session_force(sess, "rst_n", &one);
+
+    /* din = 1; after 4 clocks d(0) must hold 1 */
+    qsim_bit_vector_t din;
+    qsim_value_t dinb[4];
+    din.width = 4; din.bits = dinb;
+    dinb[0] = b1; dinb[1] = b0; dinb[2] = b0; dinb[3] = b0;
+
+    for (int k = 0; k < 4; k++) {
+        qsim_session_force(sess, "din", &din);
+        qsim_session_force(sess, "clk", &one);
+        qsim_session_step_time(sess, 1);
+        qsim_session_force(sess, "clk", &zero);
+        qsim_session_step_time(sess, 1);
+    }
+    char *o = qsim_session_eval_str(sess, "dout");
+    mu_assert_not_null(o);
+    /* 4-bit LSB-first: bit0 = 1 */
+    mu_assert(o[0] == '1' && o[1] == '0' && o[2] == '0' && o[3] == '0',
+              "shift register delivered din after 4 clocks");
+    free(o);
+    qsim_session_free(sess);
+}
+
+/* =================================================================
+ * 25. Regression: an indexed-LHS concurrent assignment
+ * (pre(1) <= din) immediately before a component instantiation used to
+ * make the parser silently drop the instance (and everything after).
+ * ================================================================= */
+static void test_vhdl_indexed_concurrent_assign_before_instance(void)
+{
+    const char *child_src =
+        "library ieee; use ieee.std_logic_1164.all;\n"
+        "entity dff4 is\n"
+        "  port (clk, rst_n: in std_logic;\n"
+        "        din: in std_logic_vector(3 downto 0);\n"
+        "        dout: out std_logic_vector(3 downto 0));\n"
+        "end entity;\n"
+        "architecture rtl of dff4 is\n"
+        "  signal mid: std_logic_vector(3 downto 0);\n"
+        "begin\n"
+        "  proc: process (clk)\n"
+        "  begin\n"
+        "    if rising_edge(clk) then\n"
+        "      if rst_n = '0' then mid <= \"0000\";\n"
+        "      else mid <= din;\n"
+        "      end if;\n"
+        "    end if;\n"
+        "  end process;\n"
+        "  dout <= mid;\n"
+        "end architecture;\n";
+
+    const char *top_src =
+        "library ieee; use ieee.std_logic_1164.all;\n"
+        "entity ttop is\n"
+        "  port (clk, rst_n: in std_logic;\n"
+        "        din: in std_logic_vector(3 downto 0);\n"
+        "        dout: out std_logic_vector(3 downto 0));\n"
+        "end entity;\n"
+        "architecture rtl of ttop is\n"
+        "  type bus_t is array (1 to 2) of std_logic_vector(3 downto 0);\n"
+        "  signal pre, post: bus_t;\n"
+        "begin\n"
+        "  pre(1) <= din;\n"            /* indexed LHS concurrent assign */
+        "  u1: entity work.dff4 port map (\n"
+        "    clk => clk, rst_n => rst_n, din => pre(1), dout => post(1));\n"
+        "  dout <= post(1);\n"
+        "end architecture;\n";
+
+    qsim_session_t *sess = qsim_session_create();
+    mu_assert_not_null(sess);
+    mu_assert(qsim_session_compile_string(sess, "dff4.vhd", child_src) != 0,
+              "compile child");
+    mu_assert(qsim_session_compile_string(sess, "ttop.vhd", top_src) != 0,
+              "compile top");
+    mu_assert(qsim_session_elaborate(sess) != 0, "elaborate");
+
+    /* the instance must have survived parsing: its internal signal exists */
+    int n = qsim_session_get_signal_count(sess);
+    int found = 0;
+    for (int i = 0; i < n; i++) {
+        const char *nm = qsim_session_get_signal_name(sess, i);
+        if (nm && strcmp(nm, "u1.mid") == 0) { found = 1; break; }
+    }
+    mu_assert(found != 0, "instance u1 bound after indexed concurrent assign");
+
+    qsim_session_free(sess);
+}
+
