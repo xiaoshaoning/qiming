@@ -166,7 +166,7 @@ static size_t _parse_case_item_pattern_count = 0;
 static uir_block_t *_parse_case_item_body = NULL;
 static uir_node_t *_parse_case_default_body = NULL;
 
-/* Nested case save/restore stack — nested cases overwrite shared _parse_case_item_*
+/* Nested case save/restore stack �� nested cases overwrite shared _parse_case_item_*
  * variables (body, patterns, items list). We push before entering a new case and
  * pop when it finishes so the outer case's state is intact. */
 #define CASE_NEST_MAX 16
@@ -261,7 +261,7 @@ static char *parse_strdup_and_lower(const char *s) {
     return p;
 }
 
-/* ── ID list helpers (for port_item, signal_decl, variable_decl) ── */
+/* ���� ID list helpers (for port_item, signal_decl, variable_decl) ���� */
 
 static void id_list_add(const char *name) {
     if (_parse_id_count < ID_LIST_MAX)
@@ -316,7 +316,7 @@ static void finish_signal_decls(uir_signal_type_t type) {
     memset(_parse_saved_array_dims, 0, sizeof(_parse_saved_array_dims));
 }
 
-/* ── File variable declarations (TEXTIO) ── */
+/* ���� File variable declarations (TEXTIO) ���� */
 
 static void finish_file_decls(void) {
     if (!_parse_unit) { id_list_clear(); return; }
@@ -351,7 +351,7 @@ static void finish_file_decls(void) {
     memset(_parse_saved_array_dims, 0, sizeof(_parse_saved_array_dims));
 }
 
-/* ── Sensitivity ── */
+/* ���� Sensitivity ���� */
 
 static void record_sensitivity(const char *name) {
     char **nn = realloc(_parse_sens_names, (_parse_sens_count + 1) * sizeof(char *));
@@ -378,7 +378,7 @@ static void finalize_process_sensitivity(uir_process_t *proc) {
     _parse_sens_count = 0;
 }
 
-/* ── Process helpers ── */
+/* ���� Process helpers ���� */
 
 static void start_vhdl_process(uir_design_unit_t *unit, const char *name) {
     if (unit) {
@@ -408,11 +408,11 @@ static void vhdl_process_all(void) {
     _parse_vhdl_process_all = 1;
 }
 
-/* ── If-statement helpers ── */
+/* ���� If-statement helpers ���� */
 
 /* VHDL if/elsif/else uses nested UIR_IF in else branches.
  * if A then B elsif C then D else E end if;
- *   → UIR_IF(cond=A, then=B, else=UIR_IF(cond=C, then=D, else=E))
+ *   �� UIR_IF(cond=A, then=B, else=UIR_IF(cond=C, then=D, else=E))
  *
  * We build from the outside inwards, pushing/poping block stacks:
  * 1. vhdl_if_then_start:  push then-block
@@ -430,10 +430,10 @@ static void vhdl_process_all(void) {
  * the correct IF chain:
  *
  *   if A then B elsif C then D end if;
- *     → UIR_IF(cond=A, then=B, else=UIR_IF(cond=C, then=D))
+ *     �� UIR_IF(cond=A, then=B, else=UIR_IF(cond=C, then=D))
  *
  * The expr stack at finish has: [A, C] (A pushed first, C on top).
- * vhdl_if_finish pops C first → innermost IF, then A → outermost IF.
+ * vhdl_if_finish pops C first �� innermost IF, then A �� outermost IF.
  */
 #define VHDL_ELSIF_STACK_MAX 16
 
@@ -447,7 +447,7 @@ static int _saved_elsif_sp_stack[VHDL_IF_NEST_MAX];
 static uir_block_t *_saved_then_block_stack[VHDL_IF_NEST_MAX];
 static uir_block_t *_saved_else_block_stack[VHDL_IF_NEST_MAX];
 static int _saved_had_else_stack[VHDL_IF_NEST_MAX];
-/* Saved elsif blocks array contents — preserves the array across nested IF entry/exit */
+/* Saved elsif blocks array contents �� preserves the array across nested IF entry/exit */
 static uir_block_t *_saved_elsif_blocks_stack[VHDL_IF_NEST_MAX][VHDL_ELSIF_STACK_MAX];
 static int _vhdl_if_nest_sp = -1;
 
@@ -476,7 +476,7 @@ static void vhdl_if_elsif_start(void) {
     pop_stmt_block(); /* pop previous then/elsif block from stmt stack */
 
     /* Save the previous level's then-block on the elsif block stack.
-     * Its condition is already on the expr stack — leave it there for
+     * Its condition is already on the expr stack �� leave it there for
      * vhdl_if_finish to pop in reverse order. */
     if (_vhdl_elsif_sp < VHDL_ELSIF_STACK_MAX - 1) {
         _vhdl_elsif_blocks[++_vhdl_elsif_sp] = _parse_then_block;
@@ -511,7 +511,7 @@ static void vhdl_if_finish(void) {
     uir_if_t *current_if = NULL;
 
     if (_vhdl_elsif_sp < 0) {
-        /* ── Simple if-then[-else], no elsif ── */
+        /* ���� Simple if-then[-else], no elsif ���� */
         uir_node_t *cond = expr_pop();
         if (_parse_then_block) {
             current_if = (uir_if_t *)uir_alloc_node(_parse_unit, UIR_IF, sizeof(uir_if_t), parse_loc());
@@ -520,7 +520,7 @@ static void vhdl_if_finish(void) {
             current_if->else_branch = _parse_had_else ? (uir_node_t *)_parse_else_block : NULL;
         }
     } else {
-        /* ── One or more elsif clauses ── */
+        /* ���� One or more elsif clauses ���� */
         /* The innermost condition is on top of the expr stack.
          * _parse_then_block holds its then-body (or the else-body if
          * _parse_had_else is set). */
@@ -570,7 +570,7 @@ static void vhdl_if_finish(void) {
     }
 }
 
-/* ── Case-statement helpers ── */
+/* ���� Case-statement helpers ���� */
 
 static void vhdl_case_enter(void) {
     /* Save outer case state (for nested cases) */
@@ -690,7 +690,7 @@ static void vhdl_case_finish(uir_design_unit_t *unit) {
     }
 }
 
-/* ── For-loop helpers ── */
+/* ���� For-loop helpers ���� */
 
 /* VHDL `for i in a to b loop ...` needs real iteration: a loop variable,
  * init (i := a), condition (i <= b) and step (i := i + 1), mirroring the
@@ -810,7 +810,7 @@ static void vhdl_for_loop_finish(uir_design_unit_t *unit) {
     free(_for_id); _for_id = NULL;
 }
 
-/* ── Wait statement helpers ── */
+/* ���� Wait statement helpers ���� */
 
 static void vhdl_wait_on_name(const char *name) {
     char **nn = realloc(_parse_wait_sens_list, (_parse_wait_sens_count + 1) * sizeof(char *));
@@ -864,7 +864,7 @@ static void vhdl_do_wait(uir_design_unit_t *unit) {
     _parse_wait_sens_count = 0;
 }
 
-/* ── Exit, next, return helpers ── */
+/* ���� Exit, next, return helpers ���� */
 
 static void vhdl_do_exit(uir_design_unit_t *unit, const char *label) {
     if (!unit) return;
@@ -894,7 +894,7 @@ static void vhdl_do_return(uir_design_unit_t *unit) {
     _parse_ret_expr = NULL;
 }
 
-/* ── Subprogram UIR construction ── */
+/* ���� Subprogram UIR construction ���� */
 
 static void vhdl_func_enter(const char *name, int is_function) {
     _parse_func_parent = _parse_unit;
@@ -946,7 +946,7 @@ static void vhdl_func_leave(void) {
     _parse_func_temp = NULL;
 }
 
-/* ── Component declaration UIR construction ── */
+/* ���� Component declaration UIR construction ���� */
 
 static void vhdl_comp_enter(const char *name) {
     _parse_comp_parent = _parse_unit;
@@ -983,7 +983,7 @@ static void vhdl_comp_leave(void) {
     _parse_comp_temp = NULL;
 }
 
-/* ── Configuration declaration UIR construction ── */
+/* ���� Configuration declaration UIR construction ���� */
 
 static void vhdl_config_capture_name(const char *name) {
     free(_parse_config_name);
@@ -1010,7 +1010,7 @@ static void vhdl_config_add_block(const char *arch_name) {
         uir_add_vhdl_config_block(_parse_unit, arch_name);
 }
 
-/* ── Alias declaration UIR construction ── */
+/* ���� Alias declaration UIR construction ���� */
 
 static void vhdl_alias_enter(const char *name) {
     free(_parse_alias_name);
@@ -1032,7 +1032,7 @@ static void vhdl_alias_finish(void) {
     free(_parse_alias_name); _parse_alias_name = NULL;
 }
 
-/* ── Attribute specification UIR construction ── */
+/* ���� Attribute specification UIR construction ���� */
 
 static void vhdl_attr_spec_begin(const char *name) {
     free(_parse_attr_name); _parse_attr_name = name ? strdup(name) : NULL;
@@ -1072,7 +1072,7 @@ static void vhdl_attr_spec_finish(void) {
     free(_parse_attr_class); _parse_attr_class = NULL;
 }
 
-/* ── Group/template UIR construction ── */
+/* ���� Group/template UIR construction ���� */
 
 static void vhdl_group_save_name(const char *name) {
     free(_parse_group_name);
@@ -1096,7 +1096,7 @@ static void vhdl_group_finish(void) {
     _parse_group = NULL;
 }
 
-/* ── Type/subtype UIR construction ── */
+/* ���� Type/subtype UIR construction ���� */
 
 static void vhdl_type_enter(const char *name, uir_vhdl_type_kind_t kind) {
     _parse_type = NULL;
@@ -1139,7 +1139,7 @@ static void vhdl_type_finish(void) {
     _parse_type = NULL;
 }
 
-/* ── Record type helpers ── */
+/* ���� Record type helpers ���� */
 
 static void vhdl_type_finish_record(void) {
     if (_parse_type) {
@@ -1197,7 +1197,7 @@ static void vhdl_subtype_finish(void) {
     _parse_type = NULL;
 }
 
-/* ── Array type helpers ── */
+/* ���� Array type helpers ���� */
 
 static int is_signal_array(uir_design_unit_t *unit, const char *name) {
     if (!unit || !name) return 0;
@@ -1254,7 +1254,7 @@ static void vhdl_type_finish_array(void) {
     memset(_parse_saved_array_dims, 0, sizeof(_parse_saved_array_dims));
 }
 
-/* ── Subprogram spec helpers (package interface, no body) ── */
+/* ���� Subprogram spec helpers (package interface, no body) ���� */
 
 static void vhdl_func_spec_enter(const char *name, int is_function) {
     _parse_func_parent = _parse_unit;
@@ -1294,7 +1294,7 @@ static void vhdl_func_spec_leave(void) {
     _parse_func_temp = NULL;
 }
 
-/* ── Assert/report helpers ── */
+/* ���� Assert/report helpers ���� */
 
 static void vhdl_do_assert(uir_design_unit_t *unit);
 
@@ -1305,7 +1305,7 @@ static void vhdl_do_report(uir_design_unit_t *unit) {
     _parse_assert_sev = NULL;
     vhdl_do_assert(unit);
 }
-/* ── With-select helpers ── */
+/* ���� With-select helpers ���� */
 
 static void vhdl_do_assert(uir_design_unit_t *unit) {
     if (!unit) { _parse_assert_cond = NULL; _parse_assert_msg = NULL; _parse_assert_sev = NULL; return; }
@@ -1344,7 +1344,7 @@ static void vhdl_select_add_item(void) {
     int pattern_count = n - 1;
 
     if (pattern_count == 0) {
-        /* "when others" — default */
+        /* "when others" �� default */
         _parse_select_default_value = value;
     } else {
         if (_parse_select_item_count >= _parse_select_item_cap) {
@@ -1458,7 +1458,7 @@ static void vhdl_select_finish(uir_design_unit_t *unit) {
     _parse_select_default_value = NULL;
 }
 
-/* ── Generate block helpers ── */
+/* ���� Generate block helpers ���� */
 
 static void vhdl_gen_for_enter(uir_design_unit_t *unit) {
     if (!unit) return;
@@ -1582,7 +1582,7 @@ static void vhdl_gen_if_finish(void) {
     _parse_gen_if_cond = NULL;
 }
 
-/* ── Assignment helpers ── */
+/* ���� Assignment helpers ���� */
 
 static void do_signal_assign(uir_design_unit_t *unit, const char *target) {
     uir_node_t *rhs = expr_pop();
@@ -1778,7 +1778,7 @@ static void vhdl_do_range_aggregate(uir_design_unit_t *unit) {
         expr_push((uir_node_t *)uir_make_unary(unit, UIR_OP_OTHERS, elem, parse_loc()));
 }
 
-/* when-else conditional: a when cond else b → UIR_CND */
+/* when-else conditional: a when cond else b �� UIR_CND */
 static void vhdl_do_when_else(uir_design_unit_t *unit) {
     uir_node_t *false_expr = expr_pop();  /* else branch */
     uir_node_t *condition  = expr_pop();  /* condition after WHEN */
@@ -1794,7 +1794,59 @@ static void vhdl_do_when_else(uir_design_unit_t *unit) {
     }
 }
 
-/* ── Function/procedure call helpers ── */
+/* ���� Multi-element named aggregates (W-1 => '1', W-2 downto 0 => '0') ���� */
+
+static uir_vhdl_agg_item_t *_agg_items = NULL;
+static size_t _agg_count = 0;
+static size_t _agg_cap = 0;
+static int _agg_open = 0;   /* non-zero while parsing inside ( ... => ... ) */
+
+static void agg_add(uir_node_t *hi, uir_node_t *lo, uir_node_t *val) {
+    if (!_agg_open) return;  /* not inside an aggregate: drop (defensive) */
+    if (_agg_count >= _agg_cap) {
+        size_t nc = _agg_cap ? _agg_cap * 4 : 8;
+        uir_vhdl_agg_item_t *ni = realloc(_agg_items, nc * sizeof(uir_vhdl_agg_item_t));
+        if (!ni) return;
+        _agg_items = ni;
+        _agg_cap = nc;
+    }
+    _agg_items[_agg_count].choice_hi = hi;
+    _agg_items[_agg_count].choice_lo = lo;
+    _agg_items[_agg_count].value = val;
+    _agg_count++;
+}
+
+static void vhdl_agg_item_others(void) { agg_add(NULL, NULL, expr_pop()); }
+static void vhdl_agg_item_range(void) {
+    uir_node_t *val = expr_pop();
+    uir_node_t *hi = expr_pop();   /* expr stack order: lo, hi, val */
+    uir_node_t *lo = expr_pop();
+    agg_add(hi, lo, val);
+}
+static void vhdl_agg_item_single(void) {
+    uir_node_t *val = expr_pop();
+    uir_node_t *idx = expr_pop();
+    agg_add(idx, idx, val);   /* single choice: hi == lo == index */
+}
+
+static void vhdl_agg_open(void) { _agg_open = 1; }
+
+static void vhdl_do_aggregate(uir_design_unit_t *unit) {
+    _agg_open = 0;
+    if (!unit || _agg_count == 0) { _agg_count = 0; return; }
+    uir_vhdl_agg_t *agg = (uir_vhdl_agg_t *)uir_alloc_node(
+        unit, UIR_VHDL_AGGREGATE, sizeof(uir_vhdl_agg_t), parse_loc());
+    if (agg) {
+        agg->items = _agg_items;
+        agg->item_count = _agg_count;
+        expr_push((uir_node_t *)agg);
+        _agg_items = NULL;   /* ownership transferred */
+    }
+    _agg_count = 0;
+    _agg_cap = 0;
+}
+
+/* ���� Function/procedure call helpers ���� */
 
 static void vhdl_call_init(const char *name) {
     strncpy(_parse_call_name, name, sizeof(_parse_call_name) - 1);
@@ -1988,7 +2040,7 @@ static void vhdl_do_func_call(void) {
         expr_push((uir_node_t *)fc);
 }
 
-/* ── Selected-name helpers (a.b.c, ieee.std_logic_1164.rising_edge) ── */
+/* ���� Selected-name helpers (a.b.c, ieee.std_logic_1164.rising_edge) ���� */
 
 static void vhdl_selname_init(const char *first) {
     free(_parse_selname_buf);
@@ -2046,7 +2098,7 @@ static void vhdl_do_selname_func_call(void) {
     }
 }
 
-/* ── Library/use helpers ── */
+/* ���� Library/use helpers ���� */
 
 static void store_library_name(const char *name) {
     char **nn = realloc(_parse_library_names, (_parse_library_count + 1) * sizeof(char *));
@@ -2068,7 +2120,7 @@ static void store_use_clause_all(void) {
 }
 
 static void store_use_clause2(void) {
-    /* "use lib.pkg;" — store "lib.pkg" */
+    /* "use lib.pkg;" �� store "lib.pkg" */
     if (!_parse_saved || !_parse_saved2) return;
     size_t len = strlen(_parse_saved) + 1 + strlen(_parse_saved2) + 1;
     char *clause = malloc(len);
@@ -2081,7 +2133,7 @@ static void store_use_clause2(void) {
 }
 
 static void store_use_clause3(void) {
-    /* "use lib.pkg.all;" or "use lib.pkg.item;" — store "lib.pkg.all" */
+    /* "use lib.pkg.all;" or "use lib.pkg.item;" �� store "lib.pkg.all" */
     if (!_parse_saved || !_parse_saved2 || !_parse_saved3) return;
     size_t len = strlen(_parse_saved) + 1 + strlen(_parse_saved2) + 1 + strlen(_parse_saved3) + 1;
     char *clause = malloc(len);
@@ -2093,7 +2145,7 @@ static void store_use_clause3(void) {
     _parse_use_clauses[_parse_use_count++] = clause;
 }
 
-/* ── Number literal parsing ── */
+/* ���� Number literal parsing ���� */
 
 static uir_node_t *parse_vhdl_number(uir_design_unit_t *unit, const char *text, uir_loc_t loc) {
     uint32_t width = 32;
@@ -2216,7 +2268,7 @@ static uir_node_t *parse_vhdl_char_literal(uir_design_unit_t *unit, const char *
     qsim_bit_vector_t *bv = qsim_bit_vector_alloc(width);
     if (!bv) return NULL;
 
-    char c = text[0]; /* text is the captured char (PEG: "'" < . > "'" — yytext is just the inner char) */
+    char c = text[0]; /* text is the captured char (PEG: "'" < . > "'" �� yytext is just the inner char) */
     if (c == '0') qsim_bit_set(bv, 0, QSIM_VAL_0);
     else if (c == '1') qsim_bit_set(bv, 0, QSIM_VAL_1);
     else if (c == 'X' || c == 'x') qsim_bit_set(bv, 0, QSIM_VAL_X);

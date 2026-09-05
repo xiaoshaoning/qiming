@@ -56,6 +56,7 @@ typedef enum uir_node_kind {
     UIR_ALWAYS_FF        = 42,   /* SystemVerilog always_ff */
     UIR_ALWAYS_LATCH     = 43,   /* SystemVerilog always_latch */
     UIR_VHDL_ASSERT      = 44,   /* VHDL assert/report statement */
+    UIR_VHDL_AGGREGATE   = 45,   /* VHDL multi-element (named) aggregate */
 } uir_node_kind_t;
 
 /* === Source location === */
@@ -822,6 +823,22 @@ typedef struct uir_vhdl_assert {
     uir_node_t *message;     /* report message expression (may be NULL) */
     int severity;            /* 0=note, 1=warning, 2=error, 3=failure */
 } uir_vhdl_assert_t;
+
+/* Multi-element VHDL aggregate, e.g. (W-1 => '1', W-2 downto 0 => '0').
+ * Evaluated at run time once the target width (and package constants) are
+ * known.  Each item: choice_hi==choice_lo==NULL => others; choice_hi==
+ * choice_lo != NULL => single choice (index); else a range choice. */
+typedef struct uir_vhdl_agg_item {
+    uir_node_t *choice_hi;   /* NULL => others item */
+    uir_node_t *choice_lo;   /* NULL => single-choice (hi is the index) */
+    uir_node_t *value;
+} uir_vhdl_agg_item_t;
+
+typedef struct uir_vhdl_agg {
+    uir_node_t base;
+    uir_vhdl_agg_item_t *items;  /* malloc'd array */
+    size_t item_count;
+} uir_vhdl_agg_t;
 
 /* === Design unit (top-level container with arena) === */
 

@@ -514,11 +514,22 @@ unary_expr <- PLUS unary_expr
     { if (_parse_unit) do_vhdl_unop(_parse_unit, UIR_OP_ABS); }
   / primary_expr
 
+aggregate_item <- KW_OTHERS ARROW expr
+    { vhdl_agg_item_others(); }
+  / expr
+    ( direction expr ARROW expr
+        { vhdl_agg_item_range(); }
+    / ARROW expr
+        { vhdl_agg_item_single(); } )
+
 primary_expr <- LPAREN KW_OTHERS ARROW expr RPAREN
     { if (_parse_unit) vhdl_do_others_aggregate(_parse_unit); }
   / LPAREN expr direction expr ARROW expr RPAREN
     { if (_parse_unit) vhdl_do_range_aggregate(_parse_unit); }
   / LPAREN expr RPAREN
+  / LPAREN { if (_parse_unit) vhdl_agg_open(); }
+    aggregate_item ( COMMA aggregate_item )* RPAREN
+    { if (_parse_unit) vhdl_do_aggregate(_parse_unit); }
   / NUMBER      { if (_parse_unit) expr_push(parse_vhdl_number(_parse_unit, yytext, parse_loc())); }
   / BIT_STRING  { if (_parse_unit) expr_push(parse_vhdl_bit_string(_parse_unit, yytext, parse_loc())); }
   / CHAR        { if (_parse_unit) expr_push(parse_vhdl_char_literal(_parse_unit, yytext, parse_loc())); }

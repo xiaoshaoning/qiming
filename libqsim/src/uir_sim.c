@@ -3577,6 +3577,88 @@ static qsim_bit_vector_t *eval_expr_body(uir_sim_context_t *ctx, uir_node_t *nod
             }
             return r;
         }
+        case UIR_VHDL_AGGREGATE: {
+            uir_vhdl_agg_t *ag = (uir_vhdl_agg_t *)node;
+            if (!ag->items || ag->item_count == 0)
+                return qsim_bit_vector_from_state(1, QSIM_X);
+            /* width: 1 + max explicit index; an `others` item extends to the
+             * current assignment context width (IEEE fill semantics). */
+            uint32_t width = 0;
+            int has_others = 0;
+            for (size_t i = 0; i < ag->item_count; i++) {
+                uir_vhdl_agg_item_t *it = &ag->items[i];
+                if (!it->choice_hi) { has_others = 1; continue; }
+                qsim_bit_vector_t *hv = eval_expr(ctx, it->choice_hi);
+                if (hv) {
+                    uint32_t v = 0;
+                    for (uint32_t b = 0; b < hv->width && b < 32; b++)
+                        if (qsim_bit_get(hv, b).state == QSIM_1) v |= (1u << b);
+                    if (v + 1 > width) width = v + 1;
+                    qsim_bit_vector_free(hv);
+                }
+            }
+            if (width == 0) width = 1;
+            if (has_others) {
+                uint32_t cw = ctx->current_context_width;
+                if (cw > width) width = cw;
+            }
+            qsim_bit_vector_t *r = qsim_bit_vector_from_state(width, QSIM_0);
+            if (!r) return qsim_bit_vector_from_state(1, QSIM_X);
+            uint8_t *covered = calloc(width, 1);
+            if (!covered) { qsim_bit_vector_free(r); return qsim_bit_vector_from_state(1, QSIM_X); }
+            for (size_t i = 0; i < ag->item_count; i++) {
+                uir_vhdl_agg_item_t *it = &ag->items[i];
+                qsim_value_t vb = {QSIM_0, 0};
+                int value_x = 0;
+                qsim_bit_vector_t *val = it->value ? eval_expr(ctx, it->value) : NULL;
+                if (val) {
+                    vb = qsim_bit_get(val, 0);
+                    if (vb.state == QSIM_X || vb.state == QSIM_Z) value_x = 1;
+                    qsim_bit_vector_free(val);
+                } else value_x = 1;
+                if (!it->choice_hi) { continue; }  /* others: applied in pass 2 */
+                uint32_t hi = 0, lo = 0;
+                qsim_bit_vector_t *hv = eval_expr(ctx, it->choice_hi);
+                if (hv) {
+                    for (uint32_t b = 0; b < hv->width && b < 32; b++)
+                        if (qsim_bit_get(hv, b).state == QSIM_1) hi |= (1u << b);
+                    qsim_bit_vector_free(hv);
+                }
+                if (it->choice_lo && it->choice_lo != it->choice_hi) {
+                    qsim_bit_vector_t *lv = eval_expr(ctx, it->choice_lo);
+                    if (lv) {
+                        for (uint32_t b = 0; b < lv->width && b < 32; b++)
+                            if (qsim_bit_get(lv, b).state == QSIM_1) lo |= (1u << b);
+                        qsim_bit_vector_free(lv);
+                    }
+                    if (lo > hi) { uint32_t t = lo; lo = hi; hi = t; }
+                } else lo = hi;
+                for (uint32_t b = lo; b <= hi && b < width; b++) {
+                    covered[b] = 1;
+                    qsim_bit_set(r, b, value_x ? (qsim_value_t){QSIM_X, 0} : vb);
+                }
+            }
+            /* others item: fill every uncovered bit */
+            for (size_t i = 0; i < ag->item_count; i++) {
+                uir_vhdl_agg_item_t *it = &ag->items[i];
+                if (it->choice_hi) continue;
+                qsim_value_t vb = {QSIM_0, 0};
+                int value_x = 0;
+                qsim_bit_vector_t *val = it->value ? eval_expr(ctx, it->value) : NULL;
+                if (val) {
+                    vb = qsim_bit_get(val, 0);
+                    if (vb.state == QSIM_X || vb.state == QSIM_Z) value_x = 1;
+                    qsim_bit_vector_free(val);
+                } else value_x = 1;
+                for (uint32_t b = 0; b < width; b++) {
+                    if (covered[b]) continue;
+                    covered[b] = 1;
+                    qsim_bit_set(r, b, value_x ? (qsim_value_t){QSIM_X, 0} : vb);
+                }
+            }
+            free(covered);
+            return r;
+        }
         case UIR_FUNC_CALL: {
             uir_func_call_t *fc = (uir_func_call_t *)node;
 

@@ -254,6 +254,12 @@ void uir_destroy_design_unit(uir_design_unit_t *unit)
                 uir_specify_t *sp = (uir_specify_t *)node;
             case UIR_VHDL_ASSERT:
                 break;
+            case UIR_VHDL_AGGREGATE: {
+                uir_vhdl_agg_t *ag = (uir_vhdl_agg_t *)node;
+                free(ag->items);
+                ag->items = NULL;
+                break;
+            }
                 /* Free specparams */
                 for (size_t si = 0; si < sp->specparam_count; si++) {
                     free(sp->specparams[si].hier_path);
@@ -1620,6 +1626,27 @@ static uir_node_t *clone_node_internal(uir_design_unit_t *unit, uir_node_t *src,
                 }
             }
             return NULL;
+        }
+
+        case UIR_VHDL_AGGREGATE: {
+            uir_vhdl_agg_t *ag = (uir_vhdl_agg_t *)src;
+            uir_vhdl_agg_t *nag = (uir_vhdl_agg_t *)uir_alloc_node(
+                unit, UIR_VHDL_AGGREGATE, sizeof(uir_vhdl_agg_t), loc);
+            if (!nag) return NULL;
+            nag->item_count = ag->item_count;
+            nag->items = NULL;
+            if (ag->item_count > 0) {
+                nag->items = calloc(ag->item_count, sizeof(uir_vhdl_agg_item_t));
+                if (!nag->items) return NULL;
+                for (size_t i = 0; i < ag->item_count; i++) {
+                    nag->items[i].choice_hi = ag->items[i].choice_hi
+                        ? clone_node_internal(unit, ag->items[i].choice_hi, subst) : NULL;
+                    nag->items[i].choice_lo = ag->items[i].choice_lo
+                        ? clone_node_internal(unit, ag->items[i].choice_lo, subst) : NULL;
+                    nag->items[i].value = clone_node_internal(unit, ag->items[i].value, subst);
+                }
+            }
+            return (uir_node_t *)nag;
         }
 
         case UIR_SIGNAL: {
