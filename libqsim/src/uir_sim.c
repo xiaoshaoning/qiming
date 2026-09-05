@@ -5902,8 +5902,29 @@ static void exec_stmt(uir_sim_context_t *ctx, uir_node_t *stmt) {
 
         case UIR_EXIT:   /* VHDL exit — stub, no-op */
         case UIR_NEXT:   /* VHDL next — stub, no-op */
-        case UIR_RETURN: /* VHDL return — stub, no-op */
             break;
+        case UIR_RETURN: {
+            /* VHDL `return expr;`: write expr into the enclosing function's
+             * return register (a local named after the function). */
+            uir_return_t *rt = (uir_return_t *)stmt;
+            int rsig = -1;
+            if (tls_prefix[0]) {
+                for (size_t i = 0; i < ctx->func_frame_count; i++) {
+                    if (strcmp(ctx->func_frames[i].prefix, tls_prefix) == 0) {
+                        rsig = ctx->func_frames[i].return_sig_idx;
+                        break;
+                    }
+                }
+            }
+            if (rsig >= 0 && rt->expr) {
+                qsim_bit_vector_t *v = eval_expr(ctx, rt->expr);
+                if (v) {
+                    qsim_bit_vector_free(ctx->signals[rsig].value);
+                    ctx->signals[rsig].value = v;
+                }
+            }
+            break;
+        }
     xdepth--;
     }
 }
@@ -6102,6 +6123,28 @@ uir_sim_context_t *uir_sim_create(uir_design_unit_t **units, size_t count) {
                 for (size_t f = 0; f < unit->func_task_count; f++) {
                     uir_func_t *ft = unit->func_tasks[f];
                     if (!ft) continue;
+
+                    /* Skip a bare declaration (spec) when a same-named
+                     * function with a real body exists in another unit
+                     * (VHDL package decl + package body).  Calls must
+                     * execute the body, not the empty spec. */
+                    if (!ft->body) {
+                        int has_body_elsewhere = 0;
+                        for (size_t u2 = 0; u2 < count && !has_body_elsewhere; u2++) {
+                            uir_design_unit_t *u2u = units[u2];
+                            if (!u2u) continue;
+                            for (size_t f2 = 0; f2 < u2u->func_task_count; f2++) {
+                                uir_func_t *ft2 = u2u->func_tasks[f2];
+                                if (ft2 && ft2 != ft && ft2->body &&
+                                    ft2->name && ft->name &&
+                                    strcmp(ft2->name, ft->name) == 0) {
+                                    has_body_elsewhere = 1;
+                                    break;
+                                }
+                            }
+                        }
+                        if (has_body_elsewhere) continue;
+                    }
 
                     func_frame_t *frame = &ctx->func_frames[frame_idx++];
                     frame->def = ft;

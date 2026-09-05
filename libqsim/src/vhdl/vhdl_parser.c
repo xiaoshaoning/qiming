@@ -940,6 +940,23 @@ static void vhdl_func_leave(void) {
             if (s) uir_add_func_local(_parse_func, (uir_node_t *)s);
         }
     }
+    /* VHDL functions return via `return expr;`; give them a hidden local
+     * register named after the function (the frame machinery reads it as
+     * the return value), mirroring the Verilog function convention. */
+    if (_parse_func->is_function && _parse_func->return_width > 0) {
+        uir_signal_t *reg = (uir_signal_t *)uir_alloc_node(
+            _parse_func_temp ? _parse_func_temp : _parse_unit, UIR_SIGNAL,
+            sizeof(uir_signal_t), parse_loc());
+        if (reg && _parse_func->name) {
+            reg->name = parse_strdup(_parse_func->name);
+            reg->sig_type = UIR_SIG_REG;
+            reg->width = _parse_func->return_width;
+            reg->array_size = 0;
+            reg->init_value.state = QSIM_X;
+            reg->init_value.strength = QSIM_STRENGTH_STRONG;
+            uir_add_func_local(_parse_func, (uir_node_t *)reg);
+        }
+    }
     _parse_unit = _parse_func_parent;
     _parse_func_parent = NULL;
     _parse_func = NULL;
@@ -1972,8 +1989,23 @@ static void vhdl_do_dslice_adjust(void) {
 static void vhdl_do_idx_ref2(void) {
     const char *name = vhdl_pop_call_name();
     int saved_call_sp = _parse_call_saved_sp;
-    if (is_numeric_std_builtin(name) || vhdl_lookup_builtin_func(name) || is_textio_builtin(name)) {
-        /* Treat as builtin function: create func_call instead of part-select */
+    int is_func = is_numeric_std_builtin(name) || vhdl_lookup_builtin_func(name) || is_textio_builtin(name);
+    if (!is_func && _parse_unit && name &&
+        !is_signal_array(_parse_unit, name) &&
+        !uir_find_signal(_parse_unit, name)) {
+        /* Not an array/signal in this unit: `f(x)` is a user function call
+         * (VHDL resolves this by declaration; qiming parses units one at a
+         * time so unknown names must fall back to a call, matching the
+         * single-argument form of e.g. is_qn_minus1(x)). */
+        int is_port = 0;
+        for (size_t i = 0; i < _parse_unit->port_count && !is_port; i++)
+            if (_parse_unit->ports[i] && _parse_unit->ports[i]->name &&
+                strcmp(_parse_unit->ports[i]->name, name) == 0)
+                is_port = 1;
+        if (!is_port) is_func = 1;
+    }
+    if (is_func) {
+        /* Treat as function call: create func_call instead of part-select */
         _parse_call_saved_sp = _expr_sp;
         int arg_count = 1;
         uir_node_t **args = malloc((size_t)arg_count * sizeof(uir_node_t *));
